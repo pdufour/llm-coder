@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Voice Code Interface</title>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="importmap">
+        {
+          "imports": {
+            "react": "https://esm.sh/react@18.3.1?dev",
+            "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?dev",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?dev",
+            "@huggingface/transformers": "http://localhost:3001/src/transformers.js",
+            "@huggingface/transformers/utils/hub.js": "http://localhost:3001/src/utils/hub.js",
+            "@huggingface/transformers/src/generation/configuration_utils.js": "http://localhost:3001/src/generation/configuration_utils.js",
+            "sharp": "http://localhost:3000/noop.js",
+            "fs": "http://localhost:3000/noop.js",
+            "path": "http://localhost:3000/noop.js",
+            "url": "http://localhost:3000/noop.js",
+            "onnxruntime-node": "http://localhost:3000/noop.js",
+            "@huggingface/jinja": "https://esm.run/@huggingface/jinja",
+            "onnxruntime-common": "https://esm.run/onnxruntime-common",
+            "#onnxruntime-webgpu": "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.mjs",
+            "onnxruntime-web/webgpu": "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.mjs",
+            "@mlc-ai/web-llm": "https://esm.run/@mlc-ai/web-llm"
+          }
+        }
+        </script>
+    <script type="module">
+        import {Workbox} from 'https://cdn.jsdelivr.net/npm/workbox-window/+esm';
+
+        const wb = new Workbox('/sw.js', { type: 'module' });
+
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.active && !navigator.serviceWorker.controller) {
+            // https://github.com/mswjs/msw/issues/98#issuecomment-612118211
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(r => r.unregister()));
+            reg = null;
+        }
+
+        const activationPromise = new Promise((resolve) => {
+            if (reg?.active) {
+                resolve();
+            } else {
+                wb.addEventListener('activated', async (event) => {
+                    resolve();
+                }, { once: true });
+            }
+        });
+
+        await wb.register();
+        await activationPromise;
+        await import('./root.tsx');
+    </script>
+</body>
+
+</html>
