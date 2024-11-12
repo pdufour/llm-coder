@@ -140,7 +140,7 @@ export function Chat() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Describe the HTML you want to generate..."
+              placeholder="Describe what you want to create..."
               className="flex-1 bg-transparent px-4 py-3 focus:outline-none placeholder-gray-500"
               disabled={isGenerating}
             />
