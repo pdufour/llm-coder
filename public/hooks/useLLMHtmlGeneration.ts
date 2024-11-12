@@ -1,8 +1,11 @@
 import React from "react";
-import { type ModelConfig, useLLMGeneration } from "./useLLMGeneration.ts";
+import {
+  LLMBackend,
+  type ModelConfig,
+  useLLMGeneration,
+} from "./useLLMGeneration.ts";
 
 // Generic LLM Backend Types & Implementations
-type LLMBackend = "webllm" | "huggingface";
 
 type UseLLMHtmlReturn = {
   generateCode: (prompt: string) => Promise<void>;

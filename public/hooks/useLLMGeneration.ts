@@ -6,7 +6,7 @@ import {
 import { CreateMLCEngine } from "@mlc-ai/web-llm";
 import React from "react";
 
-type LLMBackend = "webllm" | "huggingface";
+export type LLMBackend = "webllm" | "huggingface";
 
 export interface ModelConfig {
   huggingface?: {

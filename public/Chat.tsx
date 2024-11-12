@@ -1,5 +1,6 @@
+import { Code, MinimizeIcon, Send } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
-import { IFRAME_TEMPLATE } from "./constants/chat.ts";
+import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG } from "./constants/chat.ts";
 import { useLLMHtmlGeneration } from "./hooks/useLLMHtmlGeneration.ts";
 
 type Message = {
@@ -10,40 +11,16 @@ type Message = {
 function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
   const { generateCode, isGenerating, error, generatedCode } =
-    useLLMHtmlGeneration({
-      modelConfig: {
-        webllm: {
-          modelId: "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC",
-          generation: {
-            max_tokens: 500,
-            temperature: 0.3,
-            top_p: 0.9,
-          },
-        },
-        huggingface: {
-          modelId: "Qwen/Qwen2.5-Coder-1.5B-Instruct",
-          options: {
-            device: "webgpu",
-            dtype: "q4f16",
-          },
-          generation: {
-            max_new_tokens: 500,
-            temperature: 0.3,
-            top_p: 0.9,
-            do_sample: true,
-          },
-        },
-      },
-      backend: "webllm",
-    });
+    useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG);
   const [currentMessageId, setCurrentMessageId] = useState<number | null>(null);
 
   useEffect(() => {
     if (generatedCode) {
-      // Send the content via postMessage
-      iframeRef.current.contentWindow.postMessage(
+      iframeRef.current?.contentWindow?.postMessage(
         {
           type: "updateContent",
           content: generatedCode,
@@ -65,117 +42,127 @@ function ChatInterface() {
     e.preventDefault();
     if (!input.trim() || isGenerating) return;
 
-    const userMessage: Message = {
-      role: "user",
-      content: input,
-    };
-
-    const assistantMessage: Message = {
-      role: "assistant",
-      content: "",
-    };
+    const userMessage: Message = { role: "user", content: input };
+    const assistantMessage: Message = { role: "assistant", content: "" };
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
-    setCurrentMessageId(messages.length + 1); // Index of assistant message
+    setCurrentMessageId(messages.length + 1);
     setInput("");
+    setIsCodePanelOpen(true);
 
     await generateCode(input);
   };
 
-  // Function to convert error to string safely
-  const stringifyError = (error: any): string => {
-    if (!error) return "";
-    return error.toString();
-  };
-
   return (
-    <div className="flex h-screen">
-      {/* Chat Messages Section */}
-      <div className="w-1/2 flex flex-col p-4 border-r">
-        <div className="flex-1 overflow-auto space-y-4 mb-4">
-          {messages.map((message, index) => {
-            // Skip rendering assistant messages with empty content when not generating
-            if (
-              message.role === "assistant" &&
-              !message.content &&
-              !(index === currentMessageId && isGenerating)
-            ) {
-              return null;
-            }
-
-            return (
-              <div
-                key={index}
-                className={`p-3 rounded-lg ${
-                  message.role === "user"
-                    ? "bg-blue-100 ml-auto max-w-[80%]"
-                    : "bg-gray-100 mr-auto max-w-[80%]"
-                }`}
-              >
-                {message.role === "assistant" ? (
-                  <pre className="whitespace-pre-wrap font-mono text-sm overflow-x-auto">
-                    {message.content ||
-                      (index === currentMessageId &&
-                        isGenerating &&
-                        "Generating...")}
-                  </pre>
-                ) : (
-                  <div>{message.content}</div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Enhanced Error Handling */}
-          {error && stringifyError(error) && (
-            <div className="bg-red-100 text-red-700 p-3 rounded-lg mt-4">
-              <strong>Error:</strong> {stringifyError(error)}
-            </div>
-          )}
-        </div>
-
-        {/* Input Form */}
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Describe the HTML you want to generate..."
-            className="flex-1 p-2 border rounded"
-            disabled={isGenerating}
+    <div className="min-h-screen bg-gray-950 text-gray-200 flex flex-col">
+      {/* Main Preview Area */}
+      <div className="flex-1 relative p-8">
+        <div className="h-full w-full bg-white rounded-xl overflow-hidden shadow-2xl">
+          <iframe
+            ref={iframeRef}
+            className="w-full h-full border-0"
+            title="HTML Preview"
+            referrerPolicy="no-referrer"
+            sandbox="allow-forms allow-scripts"
+            srcDoc={IFRAME_TEMPLATE}
+            loading="lazy"
           />
-          <button
-            type="submit"
-            disabled={isGenerating}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-          >
-            {isGenerating ? "Generating..." : "Send"}
-          </button>
-        </form>
+        </div>
       </div>
 
-      {/* HTML Preview Section */}
-      <div className="w-1/2 p-4 bg-gray-50">
-        <iframe
-          ref={iframeRef}
-          className="w-full h-full border rounded-lg bg-white"
-          title="HTML Preview"
-          referrerPolicy="no-referrer"
-          sandbox="allow-forms allow-scripts"
-          srcDoc={IFRAME_TEMPLATE}
-          csp={IFRAME_CSP}
-          loading="lazy"
-          allow=""
-        />
+      {/* Generation Status */}
+      {isGenerating && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2">
+          <div className="bg-gray-900/80 backdrop-blur-sm rounded-full px-4 py-2 text-sm text-gray-300 flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            Generating code...
+          </div>
+        </div>
+      )}
+
+      {/* Code Panel */}
+      <div
+        className={`fixed bottom-0 left-0 w-full bg-gray-900/95 backdrop-blur-lg border-t border-gray-800 transition-all duration-300 ${
+          isCodePanelOpen ? "h-1/2" : "h-0"
+        }`}
+      >
+        {isCodePanelOpen && (
+          <>
+            <div className="flex justify-between items-center p-2 border-b border-gray-800">
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <Code className="w-4 h-4" />
+                Generated Code
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsCodePanelOpen(false)}
+                  className="p-1 hover:bg-gray-800 rounded"
+                >
+                  <MinimizeIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-4 h-[calc(100%-40px)]">
+              {messages.map(
+                (message, index) =>
+                  message.role === "assistant" &&
+                  message.content && (
+                    <pre
+                      key={index}
+                      className="text-sm font-mono text-gray-300 whitespace-pre-wrap"
+                    >
+                      {message.content}
+                    </pre>
+                  )
+              )}
+              {error && (
+                <div className="bg-red-900/50 text-red-300 p-3 rounded-lg mt-4">
+                  <strong>Error:</strong> {error.toString()}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Floating Input Box */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4">
+        <form onSubmit={handleSubmit} className="relative">
+          <div className="relative flex items-center bg-gray-900/80 backdrop-blur-lg rounded-xl shadow-lg border border-gray-800">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Describe the HTML you want to generate..."
+              className="flex-1 bg-transparent px-4 py-3 focus:outline-none placeholder-gray-500"
+              disabled={isGenerating}
+            />
+
+            <div className="flex items-center gap-2 pr-3">
+              {!isCodePanelOpen && messages.length > 0 && (
+                <button
+                  type="button"
+                  className="p-2 text-gray-400 hover:text-gray-200 transition-colors"
+                  onClick={() => setIsCodePanelOpen(true)}
+                >
+                  <Code className="w-5 h-5" />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isGenerating}
+                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg p-2 transition-colors"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
 export const Chat = () => {
-  return (
-    <div className="h-screen">
-      <ChatInterface />
-    </div>
-  );
+  return <ChatInterface />;
 };
