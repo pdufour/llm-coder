@@ -89,7 +89,7 @@ export async function useLLMVision(imagePath: string, query: string) {
   const startTime = performance.now();
 
   // Load all ONNX sessions in parallel
-  const [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE] =
+  let [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE] =
     await Promise.all([
       ort.InferenceSession.create(
         `${BASE_URL}/QwenVL_A${suffix}.onnx`,
@@ -108,7 +108,7 @@ export async function useLLMVision(imagePath: string, query: string) {
         sessionOptions
       ),
       ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E${suffix}.onnx`,
+        `${BASE_URL}/QwenVL_E_${suffix}.onnx`,
         sessionOptions
       ),
     ]);
@@ -173,9 +173,12 @@ export async function useLLMVision(imagePath: string, query: string) {
   // const attentionMaskVal = new Uint16Array(1);
   // attentionMaskVal[0] = 0xfc00;
 
-  let attention_mask = new ort.Tensor("float16", new Uint16Array([-65504.0]), [
+  let attention_mask = new ort.Tensor("float16", new Uint16Array([0xfc00]), [
     1,
   ]);
+  // let attention_mask = new ort.Tensor("float16", new Uint16Array([-65504.0]), [
+  //   1,
+  // ]);
   // let attention_mask = new ort.Tensor("float16", attentionMaskVal, [1]);
 
   logTensor("attention_mask", attention_mask);
@@ -215,13 +218,24 @@ export async function useLLMVision(imagePath: string, query: string) {
   // Tokenize input
   console.log("\n[TOKENIZATION] Processing prompt...");
   const tokenizer = await AutoTokenizer.from_pretrained(BASE_MODEL);
-  const token = tokenizer.apply_chat_template(messages, {
-    tokenize: true,
+  // const token = tokenizer.apply_chat_template(messages, {
+  //   tokenize: false,
+  //   return_tensors: "pt",
+  //   add_generation_prompt: true,
+  // });
+  const prompt = `\n<|im_start|>user\n<|vision_start|><|vision_end|>${query}<|im_end|>\n<|im_start|>assistant\n`;
+  const token = await tokenizer(prompt, {
     return_tensors: "pt",
-    add_generation_prompt: true,
-  });
+    add_generation_prompt: false,
+    tokenize: true,
+  }).input_ids;
+  console.log({ token });
   console.log("Token shape:", token.dims);
   console.log("Token values:", Array.from(token.data));
+  console.log({ token });
+  // if (1 == 1) {
+  //   return;
+  // }
 
   // Prepare input tensors
   const seq_length = token.dims[1];
@@ -257,6 +271,9 @@ export async function useLLMVision(imagePath: string, query: string) {
     dummy: dummy,
   });
   logTensor("position_ids (initial)", position_ids);
+
+  ortSessionC?.release();
+  ortSessionC = null;
 
   // VISION
   // Process image with model A
@@ -316,6 +333,13 @@ export async function useLLMVision(imagePath: string, query: string) {
   //   `Time taken: ${((performance.now() - imageStartTime) / 1000).toFixed(2)}s`
   // );
   // END VISION
+  ortSessionD?.release();
+  ortSessionD = null;
+
+  ortSessionA?.release();
+  ortSessionA = null;
+  // await session.release();
+  // session = null;
   // console.log({ query });
 
   console.log("\n[GENERATION] Starting text generation...");
@@ -433,7 +457,7 @@ export async function useLLMVision(imagePath: string, query: string) {
     logTensor("New hidden_states", hidden_states);
 
     if (!Number.isInteger(token_id)) {
-      console.error(`Token ID is not an integer`);
+      console.warn(`Token ID is not an integer`);
       break;
     } else {
       const decoded = await tokenizer.decode(new Int32Array([token_id]));
