@@ -18,29 +18,104 @@ function toFloat16(num) {
   return [num, float16Bits];
 }
 
+// Convert a few values and log them to compare with Python
+function uint16ToFloat16(value: number) {
+  const sign = (value & 0x8000) >> 15;
+  const exponent = (value & 0x7c00) >> 10;
+  const fraction = value & 0x03ff;
+
+  if (exponent === 0) {
+    if (fraction === 0) return 0;
+    return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 1024);
+  } else if (exponent === 0x1f) {
+    if (fraction === 0) return sign ? -Infinity : Infinity;
+    return NaN;
+  }
+  return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
+}
+
+function float16ToUint16(value: number): number {
+  // Handle special cases
+  if (value === 0) return 0;
+  if (isNaN(value)) return 0x7e00;
+  if (!isFinite(value)) return value < 0 ? 0xfc00 : 0x7c00;
+
+  // Get sign bit
+  const sign = value < 0 ? 0x8000 : 0;
+  value = Math.abs(value);
+
+  // Calculate exponent and fraction
+  let exponent = Math.floor(Math.log2(value));
+  let fraction = Math.round((value / Math.pow(2, exponent) - 1) * 1024);
+
+  // Handle denormal numbers
+  if (exponent <= -15) {
+    fraction = Math.round((value / Math.pow(2, -14)) * 1024);
+    exponent = 0;
+  } else {
+    exponent += 15;
+    if (exponent >= 31) return sign | 0x7c00; // ±Infinity
+  }
+
+  // Combine fields
+  return sign | (exponent << 10) | fraction;
+}
+
 // Helper functions for logging
 function logTensor(name: string, tensor: any) {
-  console.log(`\n[NUMPY] ${name}:`);
-  console.log(`  Shape: ${JSON.stringify(tensor.dims || tensor.shape)}`);
-  console.log(`  Type: ${tensor.type}`);
-  if (tensor.data) {
-    const data = Array.from(tensor.data).map((val) =>
-      typeof val === "bigint" ? Number(val) : val
-    );
-    try {
-      const min = Math.min(...data);
-      const max = Math.max(...data);
-      console.log(`  Min/Max: ${min.toFixed(6)} / ${max.toFixed(6)}`);
-    } catch (e) {
-      console.log(`  Min/Max: Unable to calculate for this data type`);
-    }
+  console.log(`[NUMPY] ${name}:`);
+  console.log(`  Shape: (${tensor.dims.join(", ")})`);
+  console.log(`  Dtype: ${tensor.type}`);
 
-    // For displaying values, convert BigInts to strings to prevent errors
-    const displayData = Array.from(tensor.data).map((val) =>
-      typeof val === "bigint" ? val.toString() : val
-    );
-    console.log(`  First few values: [${displayData.slice(0, 5).join(", ")}]`);
-    console.log(`  Last few values: [${displayData.slice(-5).join(", ")}]`);
+  if (tensor.data) {
+    if (tensor.type === "float16") {
+      const data = Array.from(tensor.data as Uint16Array);
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < data.length; i++) {
+        const val = uint16ToFloat16(data[i]);
+        if (val < min) min = val;
+        if (val > max) max = val;
+      }
+      console.log(`  Min/Max: ${min.toFixed(6)} / ${max.toFixed(6)}`);
+
+      const firstFew = data
+        .slice(0, 5)
+        .map(uint16ToFloat16)
+        .map((v) => v.toFixed(6))
+        .join(", ");
+      const lastFew = data
+        .slice(-5)
+        .map(uint16ToFloat16)
+        .map((v) => v.toFixed(6))
+        .join(", ");
+
+      if (tensor.dims[0] === 1) {
+        console.log(`  Values: [${firstFew}]`);
+      }
+
+      console.log(`  First few values: [${firstFew}]`);
+      console.log(`  Last few values: [${lastFew}]`);
+    } else {
+      const data = Array.from(tensor.data as number[]).map((val) =>
+        typeof val === "bigint" ? Number(val) : val
+      );
+
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] < min) min = data[i];
+        if (data[i] > max) max = data[i];
+      }
+      console.log(`  Min/Max: ${min.toFixed(6)} / ${max.toFixed(6)}`);
+
+      if (tensor.dims[0] === 1) {
+        console.log(`  Values: [${data[0]}]`);
+      }
+
+      console.log(`  First few values: [${data.slice(0, 5).join(", ")}]`);
+      console.log(`  Last few values: [${data.slice(-5).join(", ")}]`);
+    }
   }
 }
 
@@ -77,8 +152,8 @@ export async function useLLMVision(imagePath: string, query: string) {
   const suffix = QUANTIZATION ? `_${QUANTIZATION}` : "";
   const sessionOptions: ort.InferenceSession.SessionOptions = {
     executionProviders: ["webgpu"],
-    logSeverityLevel: 0,
-    logVerbosityLevel: 0,
+    logSeverityLevel: 1,
+    logVerbosityLevel: 1,
     enableProfiling: true,
     enableCpuMemArena: true,
     graphOptimizationLevel: "all",
@@ -173,12 +248,12 @@ export async function useLLMVision(imagePath: string, query: string) {
   // const attentionMaskVal = new Uint16Array(1);
   // attentionMaskVal[0] = 0xfc00;
 
-  let attention_mask = new ort.Tensor("float16", new Uint16Array([0xfc00]), [
+  // let attention_mask = new ort.Tensor("float16", new Uint16Array([0xfc00]), [
+  // 1,
+  // ]);
+  let attention_mask = new ort.Tensor("float16", new Uint16Array([-65504.0]), [
     1,
   ]);
-  // let attention_mask = new ort.Tensor("float16", new Uint16Array([-65504.0]), [
-  //   1,
-  // ]);
   // let attention_mask = new ort.Tensor("float16", attentionMaskVal, [1]);
 
   logTensor("attention_mask", attention_mask);
@@ -265,6 +340,19 @@ export async function useLLMVision(imagePath: string, query: string) {
     input_ids: input_ids,
     ids_len: ids_len,
   });
+
+  // let vals = Array.from(hidden_states.data).map(uint16ToFloat16);
+  // console.log("vals:", vals.slice(0, 5));
+
+  // vals = vals.map(float16ToUint16);
+  // console.log("vals:", vals.slice(0, 5));
+
+  // hidden_states = new ort.Tensor(
+  //   "float16",
+  //   new Uint16Array(vals), // convert back to Uint16Array
+  //   hidden_states.dims // keep the same dimensions
+  // );
+
   logTensor("hidden_states (initial)", hidden_states);
 
   let { position_ids } = await ortSessionC.run({
@@ -343,14 +431,23 @@ export async function useLLMVision(imagePath: string, query: string) {
 
     console.log(`\n[GENERATION] Step ${num_decode}`);
     console.log("Session E inputs:");
-    console.log(`  hidden_states shape: ${hidden_states.dims}`);
-    console.log(`  attention_mask shape: ${attention_mask.dims}`);
-    console.log(`  past_key_states shape: ${past_key_states.dims}`);
-    console.log(`  past_value_states shape: ${past_value_states.dims}`);
-    console.log(`  history_len shape: ${history_len.dims}`);
-    console.log(`  ids_len shape: ${ids_len.dims}`);
-    console.log(`  position_ids shape: ${position_ids.dims}`);
-    console.log(`  pos_factor shape: ${pos_factor.dims}`);
+    logTensor("  hidden_states", hidden_states);
+    logTensor("  attention_mask", attention_mask);
+    logTensor("  past_key_states", past_key_states);
+    logTensor("  past_value_states", past_value_states);
+    logTensor("  history_len", history_len);
+    logTensor("  ids_len", ids_len);
+    logTensor("  position_ids", position_ids);
+    logTensor("  pos_factor", pos_factor);
+
+    // console.log(`  hidden_states shape: ${hidden_states.dims}`);
+    // console.log(`  attention_mask shape: ${attention_mask.dims}`);
+    // console.log(`  past_key_states shape: ${past_key_states.dims}`);
+    // console.log(`  past_value_states shape: ${past_value_states.dims}`);
+    // console.log(`  history_len shape: ${history_len.dims}`);
+    // console.log(`  ids_len shape: ${ids_len.dims}`);
+    // console.log(`  position_ids shape: ${position_ids.dims}`);
+    // console.log(`  pos_factor shape: ${pos_factor.dims}`);
 
     ({
       max_logit_ids: token_id,
@@ -447,7 +544,7 @@ export async function useLLMVision(imagePath: string, query: string) {
     logTensor("New hidden_states", hidden_states);
 
     if (!Number.isInteger(token_id)) {
-      console.warn(`Token ID is not an integer`);
+      console.error(`Token ID is not an integer`);
       break;
     } else {
       const decoded = await tokenizer.decode(new Int32Array([token_id]));
