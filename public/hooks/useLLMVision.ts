@@ -108,7 +108,7 @@ export async function useLLMVision(imagePath: string, query: string) {
         sessionOptions
       ),
       ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E_uint8.onnx`,
+        `${BASE_URL}/QwenVL_E${suffix}.onnx`,
         sessionOptions
       ),
     ]);
@@ -180,7 +180,7 @@ export async function useLLMVision(imagePath: string, query: string) {
 
   logTensor("attention_mask", attention_mask);
 
-  let pos_factor = new ort.Tensor("float16", new Uint16Array([0]), [1]);
+  let pos_factor = new Tensor("float16", new Uint16Array([0]), [1]);
   logTensor("pos_factor", pos_factor);
 
   // Process image
@@ -388,7 +388,7 @@ export async function useLLMVision(imagePath: string, query: string) {
       // END VISION
 
       // NON_VISION
-      pos_factor = new ort.Tensor(
+      pos_factor = new Tensor(
         "float16",
         new Uint16Array([Number(history_len.data[0]) + 1]),
         [1]
@@ -410,7 +410,12 @@ export async function useLLMVision(imagePath: string, query: string) {
       // pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
       //   1,
       // ]);
-      pos_factor.add(BigInt(1));
+      // pos_factor.add(BigInt(1));
+      pos_factor = new ort.Tensor(
+        "float16",
+        new Uint16Array([pos_factor.data[0] + 1]),
+        [1]
+      );
 
       logTensor("Updated pos_factor", pos_factor);
       // console.log(`  Updated pos_factor: ${newPosFactor}`);
@@ -429,6 +434,7 @@ export async function useLLMVision(imagePath: string, query: string) {
 
     if (!Number.isInteger(token_id)) {
       console.error(`Token ID is not an integer`);
+      break;
     } else {
       const decoded = await tokenizer.decode(new Int32Array([token_id]));
       console.log(`Decoded token: ${decoded}`);
