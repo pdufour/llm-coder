@@ -147,6 +147,9 @@ export async function useLLMVision(imagePath: string, query: string) {
   let history_len = new Tensor("int64", new BigInt64Array([0n]), [1]);
   logTensor("history_len", history_len);
 
+  var pos_factor_v = 1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR;
+  console.log("pos_factor_v: ", pos_factor_v);
+
   let past_key_states = new ort.Tensor(
     "float16",
     new Uint16Array(
@@ -329,8 +332,11 @@ export async function useLLMVision(imagePath: string, query: string) {
     console.log(`  hidden_states shape: ${hidden_states.dims}`);
     console.log(`  attention_mask shape: ${attention_mask.dims}`);
     console.log(`  past_key_states shape: ${past_key_states.dims}`);
-    console.log(`  history_len: ${history_len.data[0]}`);
+    console.log(`  past_value_states shape: ${past_value_states.dims}`);
+    console.log(`  history_len shape: ${history_len.dims}`);
+    console.log(`  ids_len shape: ${ids_len.dims}`);
     console.log(`  position_ids shape: ${position_ids.dims}`);
+    console.log(`  pos_factor shape: ${pos_factor.dims}`);
 
     ({
       max_logit_ids: token_id,
@@ -364,7 +370,7 @@ export async function useLLMVision(imagePath: string, query: string) {
       //   new BigInt64Array([BigInt(newHistoryLen)]),
       //   [1]
       // );
-      history_len.add_(BigInt(ids_len.data[0]));
+      history_len.add(BigInt(ids_len.data[0]));
 
       logTensor("Updated history_len", history_len);
 
@@ -374,27 +380,40 @@ export async function useLLMVision(imagePath: string, query: string) {
       attention_mask = new ort.Tensor("float16", new Uint16Array([0]), [1]);
       console.log(`  Updated attention_mask: ${attention_mask.data[0]}`);
 
-      var pos_factor_v = 1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR;
-      const newPosFactor = pos_factor_v + Number(ids_len.data[0]);
-      pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
-        1,
-      ]);
+      // VISION
+      // const newPosFactor = pos_factor_v + Number(ids_len.data[0]);
+      // pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
+      //   1,
+      // ]);
+      // END VISION
+
+      // NON_VISION
+      pos_factor = new ort.Tensor(
+        "float16",
+        new Uint16Array([Number(history_len.data[0]) + 1]),
+        [1]
+      ); // Shape as (1,)
+      // END NON VISION
       console.log(`  Updated pos_factor: ${pos_factor.data[0]}`);
     } else {
       console.log(`\n[GENERATION] Regular step ${num_decode} adjustments:`);
-      const newHistoryLen = Number(history_len.data[0]) + 1;
-      history_len = new ort.Tensor(
-        "int64",
-        new BigInt64Array([BigInt(newHistoryLen)]),
-        [1]
-      );
-      console.log(`  Updated history_len: ${newHistoryLen}`);
+      // const newHistoryLen = Number(history_len.data[0]) + 1;
+      // history_len = new ort.Tensor(
+      //   "int64",
+      //   new BigInt64Array([BigInt(newHistoryLen)]),
+      //   [1]
+      // );
+      // console.log(`  Updated history_len: ${newHistoryLen}`);
+      history_len.add(BigInt(1));
 
-      const newPosFactor = Number(pos_factor.data[0]) + 1;
-      pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
-        1,
-      ]);
-      console.log(`  Updated pos_factor: ${newPosFactor}`);
+      // const newPosFactor = Number(pos_factor.data[0]) + 1;
+      // pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
+      //   1,
+      // ]);
+      pos_factor.add(BigInt(1));
+
+      logTensor("Updated pos_factor", pos_factor);
+      // console.log(`  Updated pos_factor: ${newPosFactor}`);
     }
 
     input_ids.data.set(tokenData, 0);
@@ -408,8 +427,12 @@ export async function useLLMVision(imagePath: string, query: string) {
     hidden_states = result_B.hidden_states;
     logTensor("New hidden_states", hidden_states);
 
-    const decoded = await tokenizer.decode(new Int32Array([token_id]));
-    console.log(`Decoded token: ${decoded}`);
+    if (!Number.isInteger(token_id)) {
+      console.error(`Token ID is not an integer`);
+    } else {
+      const decoded = await tokenizer.decode(new Int32Array([token_id]));
+      console.log(`Decoded token: ${decoded}`);
+    }
   }
 
   const generationTime = (performance.now() - generationStartTime) / 1000;
