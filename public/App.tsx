@@ -12,7 +12,10 @@ async function init() {
 
   // process_image();
 
-  useLLMVision("", "Describe this image");
+  useLLMVision(
+    "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
+    "Describe this image"
+  );
 
   // model_load_test();
 }
