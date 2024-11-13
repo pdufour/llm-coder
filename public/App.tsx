@@ -14,7 +14,7 @@ async function init() {
 
   useLLMVision(
     "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
-    "Describe this image"
+    "Describe this image."
   );
 
   // model_load_test();

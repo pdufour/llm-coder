@@ -298,6 +298,7 @@ export async function useLLMVision(imagePath: string, query: string) {
   //   return_tensors: "pt",
   //   add_generation_prompt: true,
   // });
+
   const prompt = `\n<|im_start|>user\n<|vision_start|><|vision_end|>${query}<|im_end|>\n<|im_start|>assistant\n`;
   const token = await tokenizer(prompt, {
     return_tensors: "pt",
@@ -307,10 +308,6 @@ export async function useLLMVision(imagePath: string, query: string) {
   console.log({ token });
   console.log("Token shape:", token.dims);
   console.log("Token values:", Array.from(token.data));
-  console.log({ token });
-  // if (1 == 1) {
-  //   return;
-  // }
 
   // Prepare input tensors
   const seq_length = token.dims[1];
