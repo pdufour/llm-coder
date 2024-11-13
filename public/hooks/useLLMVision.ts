@@ -89,7 +89,7 @@ export async function useLLMVision(imagePath: string, query: string) {
   const startTime = performance.now();
 
   // Load all ONNX sessions in parallel
-  let [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE] =
+  const [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE] =
     await Promise.all([
       ort.InferenceSession.create(
         `${BASE_URL}/QwenVL_A${suffix}.onnx`,
@@ -108,7 +108,7 @@ export async function useLLMVision(imagePath: string, query: string) {
         sessionOptions
       ),
       ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E_${suffix}.onnx`,
+        `${BASE_URL}/QwenVL_E_int8.onnx`,
         sessionOptions
       ),
     ]);
@@ -272,9 +272,6 @@ export async function useLLMVision(imagePath: string, query: string) {
   });
   logTensor("position_ids (initial)", position_ids);
 
-  ortSessionC?.release();
-  ortSessionC = null;
-
   // VISION
   // Process image with model A
   // console.log("\n[VISION] Processing vision inputs...");
@@ -333,13 +330,6 @@ export async function useLLMVision(imagePath: string, query: string) {
   //   `Time taken: ${((performance.now() - imageStartTime) / 1000).toFixed(2)}s`
   // );
   // END VISION
-  ortSessionD?.release();
-  ortSessionD = null;
-
-  ortSessionA?.release();
-  ortSessionA = null;
-  // await session.release();
-  // session = null;
   // console.log({ query });
 
   console.log("\n[GENERATION] Starting text generation...");
