@@ -1,135 +1,26 @@
-import { AutoTokenizer } from "@huggingface/transformers";
+import { AutoTokenizer, RawImage } from "@huggingface/transformers";
 import { getModelJSON } from "@huggingface/transformers/utils/hub.js";
 import { Tensor } from "@huggingface/transformers/utils/tensor.js";
 import * as ort from "onnxruntime-web/webgpu";
+import { logger } from "../utils/logging.ts";
+import { int64ToFloat16 } from "../utils/math.ts";
 
-function toFloat16(num) {
-  // Create a new DataView of an ArrayBuffer with 4 bytes (32 bits)
-  const buffer = new ArrayBuffer(4);
-  const dataView = new DataView(buffer);
-
-  // Set the 32-bit float value in the DataView
-  dataView.setFloat32(0, num, true); // true for little-endian
-
-  // Extract the 16-bit unsigned integer representation
-  const float16Bits = dataView.getUint16(0, true);
-
-  // Return the original value and the float16 representation
-  return [num, float16Bits];
-}
-
-// Convert a few values and log them to compare with Python
-function uint16ToFloat16(value: number) {
-  const sign = (value & 0x8000) >> 15;
-  const exponent = (value & 0x7c00) >> 10;
-  const fraction = value & 0x03ff;
-
-  if (exponent === 0) {
-    if (fraction === 0) return 0;
-    return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 1024);
-  } else if (exponent === 0x1f) {
-    if (fraction === 0) return sign ? -Infinity : Infinity;
-    return NaN;
-  }
-  return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
-}
-
-function float16ToUint16(value: number): number {
-  // Handle special cases
-  if (value === 0) return 0;
-  if (isNaN(value)) return 0x7e00;
-  if (!isFinite(value)) return value < 0 ? 0xfc00 : 0x7c00;
-
-  // Get sign bit
-  const sign = value < 0 ? 0x8000 : 0;
-  value = Math.abs(value);
-
-  // Calculate exponent and fraction
-  let exponent = Math.floor(Math.log2(value));
-  let fraction = Math.round((value / Math.pow(2, exponent) - 1) * 1024);
-
-  // Handle denormal numbers
-  if (exponent <= -15) {
-    fraction = Math.round((value / Math.pow(2, -14)) * 1024);
-    exponent = 0;
-  } else {
-    exponent += 15;
-    if (exponent >= 31) return sign | 0x7c00; // ±Infinity
-  }
-
-  // Combine fields
-  return sign | (exponent << 10) | fraction;
-}
-
-// Helper functions for logging
-function logTensor(name: string, tensor: any) {
-  console.log(`[NUMPY] ${name}:`);
-  console.log(`  Shape: (${tensor.dims.join(", ")})`);
-  console.log(`  Dtype: ${tensor.type}`);
-
-  if (tensor.data) {
-    if (tensor.type === "float16") {
-      const data = Array.from(tensor.data as Uint16Array);
-      let min = Infinity;
-      let max = -Infinity;
-      for (let i = 0; i < data.length; i++) {
-        const val = uint16ToFloat16(data[i]);
-        if (val < min) min = val;
-        if (val > max) max = val;
-      }
-      console.log(`  Min/Max: ${min.toFixed(6)} / ${max.toFixed(6)}`);
-
-      const firstFew = data
-        .slice(0, 5)
-        .map(uint16ToFloat16)
-        .map((v) => v.toFixed(6))
-        .join(", ");
-      const lastFew = data
-        .slice(-5)
-        .map(uint16ToFloat16)
-        .map((v) => v.toFixed(6))
-        .join(", ");
-
-      if (tensor.dims[0] === 1) {
-        console.log(`  Values: [${firstFew}]`);
-      }
-
-      console.log(`  First few values: [${firstFew}]`);
-      console.log(`  Last few values: [${lastFew}]`);
-    } else {
-      const data = Array.from(tensor.data as number[]).map((val) =>
-        typeof val === "bigint" ? Number(val) : val
-      );
-
-      let min = Infinity;
-      let max = -Infinity;
-      for (let i = 0; i < data.length; i++) {
-        if (data[i] < min) min = data[i];
-        if (data[i] > max) max = data[i];
-      }
-      console.log(`  Min/Max: ${min.toFixed(6)} / ${max.toFixed(6)}`);
-
-      if (tensor.dims[0] === 1) {
-        console.log(`  Values: [${data[0]}]`);
-      }
-
-      console.log(`  First few values: [${data.slice(0, 5).join(", ")}]`);
-      console.log(`  Last few values: [${data.slice(-5).join(", ")}]`);
-    }
-  }
-}
-
-// Use it in our logging function
 async function logSessionIO(session: any, name: string) {
-  // Original basic logging
-  console.log(`\n[SESSION ${name}] Input details:`);
+  if (!session) {
+    logger.group(`[SESSION ${name}]`);
+    logger.log("Session not loaded");
+    logger.groupEnd();
+    return;
+  }
+  logger.group(`[SESSION ${name}] Input details:`);
   session.inputNames.forEach((input: string) => {
-    console.log(`  Input:`);
-    console.log(`    Name: ${input}`);
+    logger.group("Input:");
+    logger.log(`    Name: ${input}`);
+    logger.groupEnd();
   });
+  logger.groupEnd();
 }
 
-// Constants and Configuration
 const INPUT_IMAGE_SIZE = [960, 960] as const;
 const HEIGHT_FACTOR = 10;
 const WIDTH_FACTOR = 10;
@@ -138,92 +29,82 @@ const MAX_SEQ_LENGTH = 1024;
 const BASE_URL = "http://localhost:3004/onnx";
 const BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct";
 const QUANTIZATION = "q4f16";
-const MAX_SINGLE_CHAT_LENGTH = 341;
+const MAX_SINGLE_CHAT_LENGTH = 10;
 
-export async function useLLMVision(imagePath: string, query: string) {
-  console.log("\n[STARTUP] Beginning QwenVL initialization...");
-
-  console.log("\n[CONFIG] Settings:");
-  console.log(`  INPUT_IMAGE_SIZE: ${JSON.stringify(INPUT_IMAGE_SIZE)}`);
-  console.log(`  HEIGHT_FACTOR: ${HEIGHT_FACTOR}`);
-  console.log(`  WIDTH_FACTOR: ${WIDTH_FACTOR}`);
-  console.log(`  MAX_SEQ_LENGTH: ${MAX_SEQ_LENGTH}`);
+export async function useLLMVision(
+  imagePath: string,
+  query: string,
+  vision = false
+) {
+  logger.group("[CONFIG] Settings:");
+  logger.log(`  INPUT_IMAGE_SIZE: ${JSON.stringify(INPUT_IMAGE_SIZE)}`);
+  logger.log(`  HEIGHT_FACTOR: ${HEIGHT_FACTOR}`);
+  logger.log(`  WIDTH_FACTOR: ${WIDTH_FACTOR}`);
+  logger.log(`  MAX_SEQ_LENGTH: ${MAX_SEQ_LENGTH}`);
+  logger.groupEnd();
 
   const suffix = QUANTIZATION ? `_${QUANTIZATION}` : "";
-  const sessionOptions: ort.InferenceSession.SessionOptions = {
-    executionProviders: ["webgpu"],
-    logSeverityLevel: 1,
-    logVerbosityLevel: 1,
-    enableProfiling: true,
-    enableCpuMemArena: true,
-    graphOptimizationLevel: "all",
-    executionMode: "sequential",
-  };
 
-  console.log("\n[SESSIONS] Loading and analyzing all ONNX sessions...");
+  logger.group("[SESSIONS] Loading and analyzing all ONNX sessions...");
   const startTime = performance.now();
 
-  // Load all ONNX sessions in parallel
-  const [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE] =
-    await Promise.all([
-      ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_A${suffix}.onnx`,
-        sessionOptions
-      ),
-      ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_B${suffix}.onnx`,
-        sessionOptions
-      ),
-      ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_C${suffix}.onnx`,
-        sessionOptions
-      ),
-      ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_D${suffix}.onnx`,
-        sessionOptions
-      ),
-      ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E_int8.onnx`,
-        sessionOptions
-      ),
-    ]);
+  let [
+    ortSessionA,
+    ortSessionB,
+    ortSessionC,
+    ortSessionD,
+    ortSessionE,
+  ]: (ort.InferenceSession | null)[] = [
+    null,
+    null,
+    null,
+    // await ort.InferenceSession.create(
+    //   `${BASE_URL}/QwenVL_C${suffix}.onnx`,
+    //   sessionOptions
+    // ),
+    null,
+    null,
+    // await ort.InferenceSession.create(
+    //   `${BASE_URL}/QwenVL_E_int8.onnx`,
+    //   sessionOptions
+    // ),
+  ];
 
-  for (
-    let i = 0;
-    i <
-    [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE].length;
-    i++
-  ) {
-    const session = [
-      ortSessionA,
-      ortSessionB,
-      ortSessionC,
-      ortSessionD,
-      ortSessionE,
-    ][i];
-    const name = String.fromCharCode(65 + i);
-    await logSessionIO(session, name);
-  }
+  // for (
+  //   let i = 0;
+  //   i <
+  //   [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE].length;
+  //   i++
+  // ) {
+  //   const session = [
+  //     ortSessionA,
+  //     ortSessionB,
+  //     ortSessionC,
+  //     ortSessionD,
+  //     ortSessionE,
+  //   ][i];
+  //   const name = String.fromCharCode(65 + i);
+  //   await logSessionIO(session, name);
+  // }
+  logger.groupEnd();
 
-  // Load model configuration
-  console.log("\n[MODEL] Loading configuration...");
+  logger.group("[MODEL] Loading configuration...");
   const config = (await getModelJSON(BASE_MODEL, "config.json")) as any;
-  console.log("\n[MODEL] Configuration:");
-  console.log(`  num_hidden_layers: ${config.num_hidden_layers}`);
-  console.log(`  num_attention_heads: ${config.num_attention_heads}`);
-  console.log(`  num_key_value_heads: ${config.num_key_value_heads}`);
-  console.log(`  hidden_size: ${config.hidden_size}`);
+  logger.log(`  num_hidden_layers: ${config.num_hidden_layers}`);
+  logger.log(`  num_attention_heads: ${config.num_attention_heads}`);
+  logger.log(`  num_key_value_heads: ${config.num_key_value_heads}`);
+  logger.log(`  hidden_size: ${config.hidden_size}`);
+  logger.groupEnd();
 
   const prompt_head_len = new Tensor("int64", new BigInt64Array([5n]), [1]);
-  logTensor("prompt_head_len", prompt_head_len);
+  logger.tensor("prompt_head_len", prompt_head_len);
 
-  // Initial variables
+  let position_ids;
   let num_decode = 0;
   let history_len = new Tensor("int64", new BigInt64Array([0n]), [1]);
-  logTensor("history_len", history_len);
+  logger.tensor("history_len", history_len);
 
-  var pos_factor_v = 1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR;
-  console.log("pos_factor_v: ", pos_factor_v);
+  var pos_factor_v = BigInt(1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR);
 
   let past_key_states = new ort.Tensor(
     "float16",
@@ -240,318 +121,338 @@ export async function useLLMVision(imagePath: string, query: string) {
       config.hidden_size / config.num_attention_heads,
     ]
   );
-  logTensor("past_key_states", past_key_states);
+  logger.tensor("past_key_states", past_key_states);
 
   let past_value_states = past_key_states;
-  logTensor("past_value_states", past_value_states);
+  logger.tensor("past_value_states", past_value_states);
 
-  // const attentionMaskVal = new Uint16Array(1);
-  // attentionMaskVal[0] = 0xfc00;
-
-  // let attention_mask = new ort.Tensor("float16", new Uint16Array([0xfc00]), [
-  // 1,
-  // ]);
-  let attention_mask = new ort.Tensor("float16", new Uint16Array([-65504.0]), [
-    1,
-  ]);
-  // let attention_mask = new ort.Tensor("float16", attentionMaskVal, [1]);
-
-  logTensor("attention_mask", attention_mask);
+  let attention_mask = new ort.Tensor(
+    "float16",
+    new Uint16Array([0xfbff]), // -65504.0 in float16
+    [1]
+  );
+  logger.tensor("attention_mask", attention_mask);
 
   let pos_factor = new Tensor("float16", new Uint16Array([0]), [1]);
-  logTensor("pos_factor", pos_factor);
+  logger.tensor("pos_factor", pos_factor);
 
-  // Process image
-  // VISION
-  // console.log("\n[IMAGE] Processing image...");
-  // const imageStartTime = performance.now();
-  // let image = await RawImage.fromURL(imagePath);
-  // console.log(`  Original size: ${image.width}x${image.height}`);
-  // console.log(`  Original mode: ${image.mode}`);
-
-  // image = image.rgb();
-  // image = await image.resize(INPUT_IMAGE_SIZE[0], INPUT_IMAGE_SIZE[1]);
-  // console.log(`  Resized to: ${image.width}x${image.height}`);
-
-  // image = image.toTensor("CHW");
-  // image = image.to("float32");
-  // const pixel_values = image.unsqueeze(0);
-  // logTensor("pixel_values", pixel_values);
-  // END VISION
-
-  // Prepare messages
-  const messages = [
-    {
-      role: "user",
-      content: [
-        { type: "text", text: query },
-        // { type: "image_url", image_url: "" },
-      ],
-    },
-  ];
-
-  // Tokenize input
-  console.log("\n[TOKENIZATION] Processing prompt...");
+  logger.group("[TOKENIZATION] Processing prompt...");
   const tokenizer = await AutoTokenizer.from_pretrained(BASE_MODEL);
-  // const token = tokenizer.apply_chat_template(messages, {
-  //   tokenize: false,
-  //   return_tensors: "pt",
-  //   add_generation_prompt: true,
-  // });
-
   const prompt = `\n<|im_start|>user\n<|vision_start|><|vision_end|>${query}<|im_end|>\n<|im_start|>assistant\n`;
   const token = await tokenizer(prompt, {
     return_tensors: "pt",
     add_generation_prompt: false,
     tokenize: true,
   }).input_ids;
-  console.log({ token });
-  console.log("Token shape:", token.dims);
-  console.log("Token values:", Array.from(token.data));
+  logger.log("Token shape:", token.dims);
+  logger.log("Token values:", Array.from(token.data));
+  logger.groupEnd();
 
-  // Prepare input tensors
   const seq_length = token.dims[1];
   let ids_len = new Tensor("int64", new BigInt64Array([BigInt(seq_length)]), [
     1,
   ]);
-  logTensor("ids_len", ids_len);
+  logger.tensor("ids_len", ids_len);
 
   let input_ids = new ort.Tensor(
     "int32",
     new Int32Array(MAX_SEQ_LENGTH).fill(0),
     [MAX_SEQ_LENGTH]
   );
-  logTensor("input_ids (initial)", input_ids);
+  logger.tensor("input_ids (initial)", input_ids);
 
-  const tokenData = Array.from(token.data.slice(0, seq_length), Number);
-  input_ids.data.set(tokenData);
-  logTensor("input_ids (after set)", input_ids);
+  input_ids.data.set(Array.from(token.data.slice(0, seq_length), Number));
+  logger.tensor("input_ids (after set)", input_ids);
 
   const dummy = new ort.Tensor("int32", new Int32Array([0]), []);
-  logTensor("dummy", dummy);
+  logger.tensor("dummy", dummy);
 
-  // Get hidden states from model B
-  console.log("\n[INFERENCE] Running initial inference...");
-  console.log("Computing hidden states...");
+  logger.group("[INFERENCE] Running initial inference...");
+  logger.log("Computing hidden states...");
+  ortSessionB = await ort.InferenceSession.create(
+    `${BASE_URL}/QwenVL_B${suffix}.onnx`,
+    {
+      executionProviders: ["webgpu"],
+      logSeverityLevel: 2,
+      logVerbosityLevel: 1,
+      enableProfiling: true,
+      enableCpuMemArena: true,
+      graphOptimizationLevel: "all",
+      executionMode: "sequential",
+      intraOpNumThreads: 0,
+      interOpNumThreads: 0,
+    }
+  );
   let { hidden_states } = await ortSessionB.run({
     input_ids: input_ids,
     ids_len: ids_len,
   });
 
-  // let vals = Array.from(hidden_states.data).map(uint16ToFloat16);
-  // console.log("vals:", vals.slice(0, 5));
+  logger.tensor("hidden_states (initial)", hidden_states);
 
-  // vals = vals.map(float16ToUint16);
-  // console.log("vals:", vals.slice(0, 5));
-
-  // hidden_states = new ort.Tensor(
-  //   "float16",
-  //   new Uint16Array(vals), // convert back to Uint16Array
-  //   hidden_states.dims // keep the same dimensions
-  // );
-
-  logTensor("hidden_states (initial)", hidden_states);
-
-  let { position_ids } = await ortSessionC.run({
+  logger.group("[POSITION] Computing position IDs...");
+  ortSessionC = await ort.InferenceSession.create(
+    `${BASE_URL}/QwenVL_C${suffix}.onnx`,
+    {
+      executionProviders: ["webgpu"],
+      logSeverityLevel: 2,
+      logVerbosityLevel: 1,
+      enableProfiling: true,
+      enableCpuMemArena: true,
+      graphOptimizationLevel: "all",
+      executionMode: "sequential",
+      intraOpNumThreads: 0,
+      interOpNumThreads: 0,
+    }
+  );
+  ({ position_ids } = await ortSessionC.run({
     dummy: dummy,
-  });
-  logTensor("position_ids (initial)", position_ids);
+  }));
+  logger.tensor("position_ids (initial)", position_ids);
+  logger.groupEnd();
+  logger.groupEnd();
 
-  // VISION
-  // Process image with model A
-  // console.log("\n[VISION] Processing vision inputs...");
-  // const { image_embed } = await ortSessionA.run({
-  //   pixel_values: pixel_values,
-  // });
-  // logTensor("image_embed", image_embed);
+  // Process image
+  if (vision) {
+    logger.log("\n[IMAGE] Processing image...");
+    const imageStartTime = performance.now();
+    let image = await RawImage.fromURL(imagePath);
+    logger.log(`  Original size: ${image.width}x${image.height}`);
+    logger.log(`  Original mode: ${image.mode}`);
 
-  // // Calculate lengths
-  // const total_length = Number(ids_len.data[0]) + IMAGE_EMBED_SIZE;
-  // const updated_ids_len = BigInt(total_length);
-  // const remaining_length = Math.max(
-  //   0,
-  //   MAX_SEQ_LENGTH - total_length - IMAGE_EMBED_SIZE
-  // );
+    image = image.rgb();
+    image = await image.resize(INPUT_IMAGE_SIZE[0], INPUT_IMAGE_SIZE[1]);
+    console.log(`  Resized to: ${image.width}x${image.height}`);
 
-  // // Prepare tensors for model D
-  // const split_factor = new Tensor("int32", new Int32Array([remaining_length]), [
-  //   1,
-  // ]);
-  // logTensor("split_factor", split_factor);
+    image = image.toTensor("CHW");
+    image = image.to("float32");
+    const pixel_values = image.unsqueeze(0);
+    logger.tensor("pixel_values", pixel_values);
 
-  // const ids_len_minus = new Tensor(
-  //   "int32",
-  //   new Int32Array([Number(updated_ids_len - prompt_head_len.data[0])]),
-  //   [1]
-  // );
-  // logTensor("ids_len_minus", ids_len_minus);
+    // Run session A for image embeddings
+    ortSessionA = await ort.InferenceSession.create(
+      `http://localhost:3005/onnx/QwenVL_A.onnx`,
+      {
+        executionProviders: ["webgpu"],
+        logSeverityLevel: 2,
+        logVerbosityLevel: 0,
+        enableProfiling: false,
+        enableCpuMemArena: false,
+        graphOptimizationLevel: "all",
+        executionMode: "sequential",
+        intraOpNumThreads: 0,
+        interOpNumThreads: 0,
+        externalData: [
+          {
+            path: "./QwenVL_A.onnx.data",
+            data: "http://localhost:3005/onnx/QwenVL_A.onnx.data",
+          },
+        ],
+      }
+    );
 
-  // console.log("\nProcessing vision embeddings...");
-  // console.log("Session D inputs:");
-  // console.log(`  hidden_states shape: ${hidden_states.dims}`);
-  // console.log(`  image_embed shape: ${image_embed.dims}`);
-  // console.log(`  ids_len: ${updated_ids_len}`);
-  // console.log(`  ids_len_minus: ${ids_len_minus.data[0]}`);
-  // console.log(`  split_factor: ${split_factor.data[0]}`);
+    logger.log("session a run");
+    const { image_embed } = await ortSessionA.run({
+      pixel_values: pixel_values,
+    });
 
-  // ({ hidden_states, position_ids } = await ortSessionD.run({
-  //   "hidden_states.1": new ort.Tensor(
-  //     hidden_states.type,
-  //     hidden_states.data,
-  //     [1024, 1536]
-  //   ),
-  //   image_embed: new ort.Tensor(
-  //     image_embed.type,
-  //     image_embed.data,
-  //     [100, 1536]
-  //   ),
-  //   ids_len: new ort.Tensor("int64", new BigInt64Array([updated_ids_len]), [1]),
-  //   ids_len_minus: ids_len_minus,
-  //   split_factor: split_factor,
-  // }));
+    logger.tensor("image_embed", image_embed);
 
-  // console.log("\nImage process complete");
-  // console.log(
-  //   `Time taken: ${((performance.now() - imageStartTime) / 1000).toFixed(2)}s`
-  // );
-  // END VISION
-  // console.log({ query });
+    ids_len = ids_len.add(BigInt(IMAGE_EMBED_SIZE));
 
-  console.log("\n[GENERATION] Starting text generation...");
+    const split_factor = new Tensor(
+      "int32",
+      new Int32Array([
+        MAX_SEQ_LENGTH - Number(ids_len.item()) - IMAGE_EMBED_SIZE,
+      ]),
+      [1]
+    );
+
+    const ids_len_minus = new Tensor(
+      "int32",
+      new Int32Array([Number(ids_len.item()) - Number(prompt_head_len.item())]),
+      [1]
+    );
+
+    await ortSessionA.release();
+    ortSessionA = null;
+
+    logger.log("session d create");
+    ortSessionD = await ort.InferenceSession.create(
+      `${BASE_URL}/QwenVL_D${suffix}.onnx`,
+      {
+        executionProviders: ["webgpu"],
+        logSeverityLevel: 2,
+        logVerbosityLevel: 0,
+        enableProfiling: false,
+        enableCpuMemArena: false,
+        graphOptimizationLevel: "all",
+        executionMode: "sequential",
+        intraOpNumThreads: 0,
+        interOpNumThreads: 0,
+      }
+    );
+
+    logger.log("session d run");
+    logger.tensor("image_embed", image_embed);
+    logger.tensor("ids_len", ids_len);
+    logger.tensor("ids_len_minus", ids_len_minus);
+    logger.tensor("split_factor", split_factor);
+
+    ({ hidden_states, position_ids } = await ortSessionD.run({
+      "hidden_states.1": hidden_states,
+      image_embed,
+      ids_len,
+      ids_len_minus,
+      split_factor,
+    }));
+
+    logger.tensor("updated hidden_states", hidden_states);
+    logger.tensor("updated position_ids", hidden_states);
+
+    await ortSessionD.release();
+    ortSessionD = null;
+  }
+
+  logger.group("[GENERATION] Starting text generation...");
   const generationStartTime = performance.now();
 
   while (
     num_decode < MAX_SINGLE_CHAT_LENGTH &&
     Number(history_len.data[0]) < MAX_SEQ_LENGTH
   ) {
-    let token_id: number;
+    let token_id;
+    logger.group(`Step ${num_decode}`);
+    logger.group("Session E inputs:");
+    logger.tensor("hidden_states", hidden_states);
+    logger.tensor("attention_mask", attention_mask);
+    logger.tensor("past_key_states", past_key_states);
+    logger.tensor("past_value_states", past_value_states);
+    logger.tensor("history_len", history_len);
+    logger.tensor("ids_len", ids_len);
+    logger.tensor("position_ids", position_ids);
+    logger.tensor("pos_factor", pos_factor);
+    logger.groupEnd();
 
-    console.log(`\n[GENERATION] Step ${num_decode}`);
-    console.log("Session E inputs:");
-    logTensor("  hidden_states", hidden_states);
-    logTensor("  attention_mask", attention_mask);
-    logTensor("  past_key_states", past_key_states);
-    logTensor("  past_value_states", past_value_states);
-    logTensor("  history_len", history_len);
-    logTensor("  ids_len", ids_len);
-    logTensor("  position_ids", position_ids);
-    logTensor("  pos_factor", pos_factor);
-
-    // console.log(`  hidden_states shape: ${hidden_states.dims}`);
-    // console.log(`  attention_mask shape: ${attention_mask.dims}`);
-    // console.log(`  past_key_states shape: ${past_key_states.dims}`);
-    // console.log(`  past_value_states shape: ${past_value_states.dims}`);
-    // console.log(`  history_len shape: ${history_len.dims}`);
-    // console.log(`  ids_len shape: ${ids_len.dims}`);
-    // console.log(`  position_ids shape: ${position_ids.dims}`);
-    // console.log(`  pos_factor shape: ${pos_factor.dims}`);
+    if (!ortSessionE) {
+      ortSessionE = await ort.InferenceSession.create(
+        `${BASE_URL}/QwenVL_E_int8.onnx`,
+        {
+          executionProviders: ["wasm"],
+          logSeverityLevel: 2,
+          logVerbosityLevel: 0,
+          enableProfiling: false,
+          enableCpuMemArena: false,
+          graphOptimizationLevel: "all",
+          executionMode: "sequential",
+          intraOpNumThreads: 0,
+          interOpNumThreads: 0,
+        }
+      );
+    }
 
     ({
       max_logit_ids: token_id,
-      past_key_states,
-      past_value_states,
+      past_key_states: past_key_states,
+      past_value_states: past_value_states,
     } = await ortSessionE.run({
-      hidden_states: hidden_states,
-      attention_mask: attention_mask,
+      hidden_states,
+      attention_mask,
       "past_key_states.1": past_key_states,
       "past_value_states.1": past_value_states,
-      history_len: history_len,
-      ids_len: ids_len,
-      position_ids: position_ids,
-      pos_factor: pos_factor,
+      history_len,
+      ids_len,
+      position_ids,
+      pos_factor,
     }));
+
     if (token_id === 151643 || token_id === 151645) {
-      console.log("\n[GENERATION] Reached stop token");
+      logger.log("Reached stop token");
+      logger.groupEnd();
       break;
     }
 
-    logTensor("New token_id", token_id);
-    console.log({ token_id });
+    logger.tensor("New token_id", token_id);
+    logger.log({ token_id });
 
     num_decode++;
     if (num_decode < 2) {
-      console.log("\n[GENERATION] First decode step adjustments:");
-      // const newHistoryLen =
-      //   Number(history_len.data[0]) + Number(ids_len.data[0]);
-      // history_len = new ort.Tensor(
-      //   "int64",
-      //   new BigInt64Array([BigInt(newHistoryLen)]),
-      //   [1]
-      // );
-      history_len.add(BigInt(ids_len.data[0]));
-
-      logTensor("Updated history_len", history_len);
+      logger.group("First decode step adjustments:");
+      console.log("ids_len", ids_len.data[0]);
+      history_len = history_len.add(BigInt(Number(ids_len.data[0])));
+      // console.log({ history_len });
+      // console.log(history_len.data);
+      // console.log({ history_len });
+      // if (1 == 1) {
+      // break;
+      // }
+      logger.tensor("Updated history_len", history_len);
 
       ids_len = new ort.Tensor("int64", new BigInt64Array([1n]), [1]);
-      console.log(`  Updated ids_len: ${ids_len.data[0]}`);
+      logger.log(`Updated ids_len: ${ids_len.data[0]}`);
 
       attention_mask = new ort.Tensor("float16", new Uint16Array([0]), [1]);
-      console.log(`  Updated attention_mask: ${attention_mask.data[0]}`);
+      logger.log(`Updated attention_mask: ${attention_mask.data[0]}`);
 
-      // VISION
-      // const newPosFactor = pos_factor_v + Number(ids_len.data[0]);
-      // pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
-      //   1,
-      // ]);
-      // END VISION
-
-      // NON_VISION
-      pos_factor = new Tensor(
-        "float16",
-        new Uint16Array([Number(history_len.data[0]) + 1]),
-        [1]
-      ); // Shape as (1,)
-      // END NON VISION
-      console.log(`  Updated pos_factor: ${pos_factor.data[0]}`);
+      if (vision) {
+        pos_factor = new Tensor(
+          "float16",
+          new Uint16Array([int64ToFloat16(pos_factor_v + ids_len.data[0])]),
+          [1]
+        );
+      } else {
+        pos_factor = new Tensor(
+          "float16",
+          new Uint16Array([int64ToFloat16(history_len.data[0] + BigInt(1))]),
+          [1]
+        );
+      }
+      logger.groupEnd();
     } else {
-      console.log(`\n[GENERATION] Regular step ${num_decode} adjustments:`);
-      // const newHistoryLen = Number(history_len.data[0]) + 1;
-      // history_len = new ort.Tensor(
-      //   "int64",
-      //   new BigInt64Array([BigInt(newHistoryLen)]),
-      //   [1]
-      // );
-      // console.log(`  Updated history_len: ${newHistoryLen}`);
+      logger.group(`Regular step ${num_decode} adjustments:`);
       history_len.add(BigInt(1));
-
-      // const newPosFactor = Number(pos_factor.data[0]) + 1;
-      // pos_factor = new ort.Tensor("float16", new Uint16Array([newPosFactor]), [
-      //   1,
-      // ]);
-      // pos_factor.add(BigInt(1));
       pos_factor = new ort.Tensor(
         "float16",
         new Uint16Array([pos_factor.data[0] + 1]),
         [1]
       );
-
-      logTensor("Updated pos_factor", pos_factor);
-      // console.log(`  Updated pos_factor: ${newPosFactor}`);
+      logger.tensor("Updated history_len", history_len);
+      logger.tensor("Updated pos_factor", pos_factor);
+      logger.groupEnd();
     }
 
-    input_ids.data.set(tokenData, 0);
-    logTensor("  Updated input_ids", input_ids);
+    // input_ids[0] = token_id.data[0];
+    console.log({ token_id });
+    (input_ids.data as Int32Array)[0] = Number(token_id.data[0]);
+    logger.tensor("Updated input_ids", input_ids);
 
-    console.log("\nGetting new hidden states...");
+    logger.group("Getting new hidden states...");
     const result_B = await ortSessionB.run({
       input_ids: input_ids,
       ids_len: ids_len,
     });
     hidden_states = result_B.hidden_states;
-    logTensor("New hidden_states", hidden_states);
+    logger.tensor("New hidden_states", hidden_states);
+    logger.groupEnd();
 
-    if (!Number.isInteger(token_id)) {
-      console.error(`Token ID is not an integer`);
-      break;
+    if (
+      !Number.isInteger(token_id.data[0]) &&
+      !["bigint", "number"].includes(typeof token_id.data[0])
+    ) {
+      throw new Error(`Token ID is not an integer`);
     } else {
-      const decoded = await tokenizer.decode(new Int32Array([token_id]));
-      console.log(`Decoded token: ${decoded}`);
+      // Decode token
+      const decoded = tokenizer.decode([...token_id.data]);
+      logger.log(`Decoded token: ${decoded}`);
     }
+
+    logger.groupEnd();
   }
 
   const generationTime = (performance.now() - generationStartTime) / 1000;
-  console.log(`\n\n[PERFORMANCE] Generation complete:`);
-  console.log(`  Total tokens generated: ${num_decode}`);
-  console.log(`  Generation time: ${generationTime.toFixed(2)}s`);
-  console.log(`  Speed: ${(num_decode / generationTime).toFixed(3)} tokens/s`);
+  logger.group("[PERFORMANCE] Generation complete:");
+  logger.log(`  Total tokens generated: ${num_decode}`);
+  logger.log(`  Generation time: ${generationTime.toFixed(2)}s`);
+  logger.log(`  Speed: ${(num_decode / generationTime).toFixed(3)} tokens/s`);
+  logger.groupEnd();
 }
