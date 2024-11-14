@@ -34,7 +34,7 @@ const MAX_SINGLE_CHAT_LENGTH = 10;
 export async function useLLMVision(
   imagePath: string,
   query: string,
-  vision = false
+  vision = true
 ) {
   logger.group("[CONFIG] Settings:");
   logger.log(`  INPUT_IMAGE_SIZE: ${JSON.stringify(INPUT_IMAGE_SIZE)}`);
@@ -217,21 +217,23 @@ export async function useLLMVision(
     logger.log("\n[IMAGE] Processing image...");
     const imageStartTime = performance.now();
     let image = await RawImage.fromURL(imagePath);
-    logger.log(`  Original size: ${image.width}x${image.height}`);
-    logger.log(`  Original mode: ${image.mode}`);
+    logger.log(`Original size: ${image.width}x${image.height}`);
+    logger.log(`Original mode: ${image.mode}`);
+
+    // image = await image.resize(INPUT_IMAGE_SIZE[0], INPUT_IMAGE_SIZE[1]);
+    console.log(`  Resized to: ${image.width}x${image.height}`);
 
     image = image.rgb();
-    image = await image.resize(INPUT_IMAGE_SIZE[0], INPUT_IMAGE_SIZE[1]);
-    console.log(`  Resized to: ${image.width}x${image.height}`);
 
     image = image.toTensor("CHW");
     image = image.to("float32");
+    image = image.div_(255.0);
     const pixel_values = image.unsqueeze(0);
     logger.tensor("pixel_values", pixel_values);
 
     // Run session A for image embeddings
     ortSessionA = await ort.InferenceSession.create(
-      `http://localhost:3005/onnx/QwenVL_A.onnx`,
+      `http://localhost:3005/onnx/QwenVL_A_q4f16.onnx`,
       {
         executionProviders: ["webgpu"],
         logSeverityLevel: 2,
@@ -242,12 +244,12 @@ export async function useLLMVision(
         executionMode: "sequential",
         intraOpNumThreads: 0,
         interOpNumThreads: 0,
-        externalData: [
-          {
-            path: "./QwenVL_A.onnx.data",
-            data: "http://localhost:3005/onnx/QwenVL_A.onnx.data",
-          },
-        ],
+        // externalData: [
+        //   {
+        //     path: "./QwenVL_A.onnx.data",
+        //     data: "http://localhost:3005/onnx/QwenVL_A.onnx.data",
+        //   },
+        // ],
       }
     );
 
@@ -255,6 +257,7 @@ export async function useLLMVision(
     const { image_embed } = await ortSessionA.run({
       pixel_values: pixel_values,
     });
+    console.log("done session a");
 
     logger.tensor("image_embed", image_embed);
 
@@ -308,7 +311,7 @@ export async function useLLMVision(
     }));
 
     logger.tensor("updated hidden_states", hidden_states);
-    logger.tensor("updated position_ids", hidden_states);
+    logger.tensor("updated position_ids", position_ids);
 
     await ortSessionD.release();
     ortSessionD = null;

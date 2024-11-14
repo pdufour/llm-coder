@@ -29,20 +29,31 @@ export function int64ToFloat16(int64Value) {
   }
 }
 
-export function uint16ToFloat16(value: number) {
-  const sign = (value & 0x8000) >> 15;
-  const exponent = (value & 0x7c00) >> 10;
-  const fraction = value & 0x03ff;
-
-  if (exponent === 0) {
-    if (fraction === 0) return 0;
-    return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 1024);
-  } else if (exponent === 0x1f) {
-    // Special handling for fraction in this case
-    return (sign ? -1 : 1) * Math.pow(2, 16) * (1 + fraction / 1024);
+export function uint16ToFloat16(uint16) {
+  // Ensure the input is within the uint16 range
+  if (uint16 < 0 || uint16 > 0xffff) {
+    throw new RangeError("Input must be a uint16 value (0 to 65535).");
   }
 
-  return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
+  const sign = (uint16 >> 15) & 0x1; // Extract sign bit
+  const exponent = (uint16 >> 10) & 0x1f; // Extract exponent bits
+  const mantissa = uint16 & 0x3ff; // Extract mantissa bits
+
+  // Handle special cases for float16
+  if (exponent === 0 && mantissa === 0) {
+    return 0; // Zero
+  } else if (exponent === 31) {
+    return mantissa === 0 ? Infinity : NaN; // Infinity or NaN
+  }
+
+  // Adjust exponent for float32 representation
+  const adjustedExponent = exponent === 0 ? 0 : exponent + (127 - 15);
+  const float32 = (sign << 31) | (adjustedExponent << 23) | (mantissa << 13);
+
+  // Convert to a Float32 number
+  const buffer = new ArrayBuffer(4);
+  new Uint32Array(buffer)[0] = float32;
+  return new Float32Array(buffer)[0];
 }
 
 function toFloat16(num) {

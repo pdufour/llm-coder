@@ -13,7 +13,8 @@ async function init() {
   // process_image();
 
   useLLMVision(
-    "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
+    "http://localhost:3005/car_960.jpg",
+    // "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
     "Describe this image."
   );
 
@@ -23,10 +24,10 @@ async function init() {
 async function process_image() {
   env.remoteHost = "http://localhost:3001";
   env.remotePathTemplate = "models/{model}";
-  const url =
-    "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg";
+  // "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg";
+  // const url = "http://localhost:3005/car_960.jpg";
   const image = await RawImage.fromURL(url);
-  image.rgb().resize({ width: 224, height: 224 });
+  // image.rgb().resize({ width: 224, height: 224 });
   // useLLMVision(image, "What is the make of the car?");
   // const model_id = "";
 

@@ -1,3 +1,10 @@
+import { Float16Array, getFloat16, setFloat16 } from "@petamoriken/float16";
+
+const _1 = Float16Array;
+
+const _2 = getFloat16;
+const _3 = setFloat16;
+
 class Logger {
   static indentLevel: number = 0;
 
@@ -25,12 +32,30 @@ class Logger {
     logger.debug(`Shape: (${tensor.dims.join(", ")})`);
     logger.debug(`Dtype: ${tensor.type}`);
 
+    let data;
     if (tensor.data) {
-      const data = Array.from(tensor.data as (number | bigint)[]).map(
-        (val: number | bigint) => {
-          return val.toString();
+      if (tensor.type === "float16") {
+        const view = new DataView(
+          tensor.data.buffer,
+          tensor.data.byteOffset,
+          tensor.data.byteLength
+        );
+        const littleEndian = true; // Adjust if necessary
+
+        const numElements = tensor.data.length;
+        data = [];
+        for (let i = 0; i < numElements; i++) {
+          const offset = i * 2;
+          const value = getFloat16(view, offset, littleEndian);
+          data.push(value);
         }
-      );
+      } else {
+        data = Array.from(tensor.data as (number | bigint)[]).map(
+          (val: number | bigint) => {
+            return val.toString();
+          }
+        );
+      }
 
       if (tensor.dims[0] === 1) {
         logger.debug(`Values: [${data[0]}]`);
