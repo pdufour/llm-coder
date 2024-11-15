@@ -429,16 +429,9 @@ export async function useLLMVision(
     } else {
       logger.group(`Regular step ${num_decode} adjustments:`);
       history_len = history_len.add(BigInt(1));
-      console.log(pos_factor.clone());
       pos_factor = pos_factor.map((v) =>
         int64ToFloat16(float16ToInt64(v) + BigInt(1))
       );
-      console.log(pos_factor.clone());
-      // pos_factor = new ort.Tensor(
-      //   "float16",
-      //   new Uint16Array([pos_factor.data[0] + 1]),
-      //   [1]
-      // );
       logger.tensor("Updated history_len", history_len);
       logger.tensor("Updated pos_factor", pos_factor);
       logger.groupEnd();
