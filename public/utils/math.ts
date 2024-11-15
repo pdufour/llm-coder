@@ -29,6 +29,32 @@ export function int64ToFloat16(int64Value) {
   }
 }
 
+export function float16ToInt64(float16Value: number): bigint {
+  // Extract components from float16
+  const sign = (float16Value & 0x8000) >> 15;
+  const exponent = (float16Value & 0x7c00) >> 10;
+  const mantissa = float16Value & 0x03ff;
+
+  // Handle special cases
+  if (exponent === 0 && mantissa === 0) return BigInt(0); // Zero
+  if (exponent === 0x1f) return sign ? BigInt("-Infinity") : BigInt("Infinity"); // Infinity
+
+  // Convert back to number
+  let value;
+  if (exponent === 0) {
+    // Subnormal numbers
+    value = Math.pow(2, -14) * (mantissa / 1024);
+  } else {
+    // Normalized numbers
+    value = Math.pow(2, exponent - 15) * (1 + mantissa / 1024);
+  }
+
+  // Apply sign
+  value = sign ? -value : value;
+
+  return BigInt(Math.round(value));
+}
+
 export function uint16ToFloat16(uint16) {
   // Ensure the input is within the uint16 range
   if (uint16 < 0 || uint16 > 0xffff) {

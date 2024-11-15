@@ -3,7 +3,7 @@ import { getModelJSON } from "@huggingface/transformers/utils/hub.js";
 import { Tensor } from "@huggingface/transformers/utils/tensor.js";
 import * as ort from "onnxruntime-web/webgpu";
 import { logger } from "../utils/logging.ts";
-import { int64ToFloat16 } from "../utils/math.ts";
+import { float16ToInt64, int64ToFloat16 } from "../utils/math.ts";
 
 async function logSessionIO(session: any, name: string) {
   if (!session) {
@@ -233,7 +233,7 @@ export async function useLLMVision(
 
     // Run session A for image embeddings
     ortSessionA = await ort.InferenceSession.create(
-      `http://localhost:3005/onnx/QwenVL_A_q4f16.onnx`,
+      `${BASE_URL}/QwenVL_A_q4f16.onnx`,
       {
         executionProviders: ["webgpu"],
         logSeverityLevel: 2,
@@ -324,6 +324,11 @@ export async function useLLMVision(
     num_decode < MAX_SINGLE_CHAT_LENGTH &&
     Number(history_len.data[0]) < MAX_SEQ_LENGTH
   ) {
+    // const int32Data = Array.from(history_len.data).map(Number);
+    // history_len = new ort.Tensor("int32", int32Data, history_len.dims);
+    // const int32IdsData = Array.from(ids_len.data).map(Number);
+    // ids_len = new ort.Tensor("int32", int32IdsData, ids_len.dims);
+
     let token_id;
     logger.group(`Step ${num_decode}`);
     logger.group("Session E inputs:");
@@ -338,21 +343,29 @@ export async function useLLMVision(
     logger.groupEnd();
 
     if (!ortSessionE) {
+      console.log("Create ortSessionE");
       ortSessionE = await ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E_int8.onnx`,
+        `http://localhost:3005/onnx/QwenVL_E_int8.onnx`,
         {
           executionProviders: ["wasm"],
-          logSeverityLevel: 2,
-          logVerbosityLevel: 0,
+          logSeverityLevel: 0,
+          logVerbosityLevel: 3,
           enableProfiling: false,
           enableCpuMemArena: false,
           graphOptimizationLevel: "all",
           executionMode: "sequential",
           intraOpNumThreads: 0,
           interOpNumThreads: 0,
+          // webgpuFlags: {
+          //   debugShaders: true,
+          //   profilingMode: true,
+          // },
         }
       );
     }
+
+    ort.env.debug = true;
+    ort.env.logLevel = "verbose";
 
     ({
       max_logit_ids: token_id,
@@ -410,15 +423,22 @@ export async function useLLMVision(
           [1]
         );
       }
+
+      logger.tensor("Updated pos_factor", pos_factor);
       logger.groupEnd();
     } else {
       logger.group(`Regular step ${num_decode} adjustments:`);
-      history_len.add(BigInt(1));
-      pos_factor = new ort.Tensor(
-        "float16",
-        new Uint16Array([pos_factor.data[0] + 1]),
-        [1]
+      history_len = history_len.add(BigInt(1));
+      console.log(pos_factor.clone());
+      pos_factor = pos_factor.map((v) =>
+        int64ToFloat16(float16ToInt64(v) + BigInt(1))
       );
+      console.log(pos_factor.clone());
+      // pos_factor = new ort.Tensor(
+      //   "float16",
+      //   new Uint16Array([pos_factor.data[0] + 1]),
+      //   [1]
+      // );
       logger.tensor("Updated history_len", history_len);
       logger.tensor("Updated pos_factor", pos_factor);
       logger.groupEnd();
