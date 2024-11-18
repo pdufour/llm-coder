@@ -3,11 +3,7 @@ import { getModelJSON } from "@huggingface/transformers/utils/hub.js";
 import { Tensor } from "@huggingface/transformers/utils/tensor.js";
 import * as ort from "onnxruntime-web/webgpu";
 import { logger } from "../utils/logging.ts";
-import {
-  float16ToInt64,
-  int32ToFloat16,
-  int64ToFloat16,
-} from "../utils/math.ts";
+import { float16ToInt64, int64ToFloat16 } from "../utils/math.ts";
 
 async function logSessionIO(session: any, name: string) {
   if (!session) {
@@ -30,7 +26,7 @@ const HEIGHT_FACTOR = 10;
 const WIDTH_FACTOR = 10;
 const IMAGE_EMBED_SIZE = WIDTH_FACTOR * HEIGHT_FACTOR;
 const MAX_SEQ_LENGTH = 1024;
-const BASE_URL = "http://localhost:3006/onnx";
+const BASE_URL = "http://localhost:3003/onnx";
 const BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct";
 const QUANTIZATION = "q4f16";
 const MAX_SINGLE_CHAT_LENGTH = 10;
@@ -52,44 +48,8 @@ export async function useLLMVision(
   logger.group("[SESSIONS] Loading and analyzing all ONNX sessions...");
   const startTime = performance.now();
 
-  let [
-    ortSessionA,
-    ortSessionB,
-    ortSessionC,
-    ortSessionD,
-    ortSessionE,
-  ]: (ort.InferenceSession | null)[] = [
-    null,
-    null,
-    null,
-    // await ort.InferenceSession.create(
-    //   `${BASE_URL}/QwenVL_C${suffix}.onnx`,
-    //   sessionOptions
-    // ),
-    null,
-    null,
-    // await ort.InferenceSession.create(
-    //   `${BASE_URL}/QwenVL_E_int8.onnx`,
-    //   sessionOptions
-    // ),
-  ];
+  let ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE;
 
-  // for (
-  //   let i = 0;
-  //   i <
-  //   [ortSessionA, ortSessionB, ortSessionC, ortSessionD, ortSessionE].length;
-  //   i++
-  // ) {
-  //   const session = [
-  //     ortSessionA,
-  //     ortSessionB,
-  //     ortSessionC,
-  //     ortSessionD,
-  //     ortSessionE,
-  //   ][i];
-  //   const name = String.fromCharCode(65 + i);
-  //   await logSessionIO(session, name);
-  // }
   logger.groupEnd();
 
   logger.groupCollapsed("[MODEL] Loading configuration...");
@@ -105,7 +65,7 @@ export async function useLLMVision(
 
   let position_ids;
   let num_decode = 0;
-  let history_len = new Tensor("int32", new Int32Array([0]), [1]);
+  let history_len = new Tensor("int64", new BigInt64Array([0n]), [1]);
   logger.tensor("history_len", history_len);
 
   var pos_factor_v = BigInt(1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR);
@@ -174,10 +134,10 @@ export async function useLLMVision(
   logger.groupCollapsed("[INFERENCE] Running initial inference...");
   logger.log("Computing hidden states...");
   ortSessionB = await ort.InferenceSession.create(
-    `${BASE_URL}/QwenVL_B${suffix}.onnx`,
+    `http://localhost:3003/onnx/QwenVL_B${suffix}.onnx`,
     {
       executionProviders: ["webgpu"],
-      logSeverityLevel: 0,
+      logSeverityLevel: 2,
       logVerbosityLevel: 1,
       enableProfiling: true,
       enableCpuMemArena: true,
@@ -196,7 +156,7 @@ export async function useLLMVision(
 
   logger.groupCollapsed("[POSITION] Computing position IDs...");
   ortSessionC = await ort.InferenceSession.create(
-    `${BASE_URL}/QwenVL_C${suffix}.onnx`,
+    `http://localhost:3003/onnx/QwenVL_C${suffix}.onnx`,
     {
       executionProviders: ["webgpu"],
       logSeverityLevel: 2,
@@ -236,29 +196,25 @@ export async function useLLMVision(
 
     // Run session A for image embeddings
     ortSessionA = await ort.InferenceSession.create(
-      `${BASE_URL}/QwenVL_A_q4f16.onnx`,
+      `http://localhost:3003/onnx/QwenVL_A${suffix}.onnx`,
       {
         executionProviders: ["webgpu"],
         logSeverityLevel: 2,
         logVerbosityLevel: 0,
         enableProfiling: false,
         enableCpuMemArena: false,
-        graphOptimizationLevel: "all",
+        graphOptimizationLevel: "disabled",
         executionMode: "sequential",
         intraOpNumThreads: 0,
         interOpNumThreads: 0,
-        // externalData: [
-        //   {
-        //     path: "./QwenVL_A.onnx.data",
-        //     data: "http://localhost:3005/onnx/QwenVL_A.onnx.data",
-        //   },
-        // ],
       }
     );
 
+    logger.log("session a run");
     const { image_embed } = await ortSessionA.run({
       pixel_values: pixel_values,
     });
+    console.log("done session a");
 
     logger.tensor("image_embed", image_embed);
 
@@ -283,7 +239,7 @@ export async function useLLMVision(
 
     logger.log("session d create");
     ortSessionD = await ort.InferenceSession.create(
-      `${BASE_URL}/QwenVL_D${suffix}.onnx`,
+      `http://localhost:3003/onnx/QwenVL_D${suffix}.onnx`,
       {
         executionProviders: ["webgpu"],
         logSeverityLevel: 2,
@@ -341,7 +297,7 @@ export async function useLLMVision(
     if (!ortSessionE) {
       console.log("Create ortSessionE");
       ortSessionE = await ort.InferenceSession.create(
-        `${BASE_URL}/QwenVL_E_int8.onnx`,
+        `http://localhost:3004/onnx/QwenVL_E_int8.onnx`,
         {
           executionProviders: ["webgpu"],
           logSeverityLevel: 1,
@@ -386,10 +342,10 @@ export async function useLLMVision(
     num_decode++;
     if (num_decode < 2) {
       logger.groupCollapsed("First decode step adjustments:");
-      history_len = history_len.add(BigInt(ids_len.data[0]));
+      history_len = history_len.add(BigInt(Number(ids_len.data[0])));
       logger.tensor("Updated history_len", history_len);
 
-      ids_len = new ort.Tensor("int64", new BigInt64Array([1]), [1]);
+      ids_len = new ort.Tensor("int64", new BigInt64Array([1n]), [1]);
       logger.log(`Updated ids_len: ${ids_len.data[0]}`);
 
       attention_mask = new ort.Tensor("float16", new Uint16Array([0]), [1]);
@@ -398,7 +354,7 @@ export async function useLLMVision(
       if (vision) {
         pos_factor = new Tensor(
           "float16",
-          new Uint16Array([int32ToFloat16(pos_factor_v + ids_len.data[0])]),
+          new Uint16Array([int64ToFloat16(pos_factor_v + ids_len.data[0])]),
           [1]
         );
       } else {

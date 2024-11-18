@@ -13,7 +13,7 @@ async function init() {
   // process_image();
 
   useLLMVision(
-    "http://localhost:3005/car_960.jpg",
+    "http://localhost:3004/car_960.jpg",
     // "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
     "Describe this image."
   );
