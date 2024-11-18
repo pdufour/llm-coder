@@ -3,7 +3,11 @@ import { getModelJSON } from "@huggingface/transformers/utils/hub.js";
 import { Tensor } from "@huggingface/transformers/utils/tensor.js";
 import * as ort from "onnxruntime-web/webgpu";
 import { logger } from "../utils/logging.ts";
-import { float16ToInt64, int64ToFloat16 } from "../utils/math.ts";
+import {
+  float16ToInt64,
+  int32ToFloat16,
+  int64ToFloat16,
+} from "../utils/math.ts";
 
 async function logSessionIO(session: any, name: string) {
   if (!session) {
@@ -26,7 +30,7 @@ const HEIGHT_FACTOR = 10;
 const WIDTH_FACTOR = 10;
 const IMAGE_EMBED_SIZE = WIDTH_FACTOR * HEIGHT_FACTOR;
 const MAX_SEQ_LENGTH = 1024;
-const BASE_URL = "http://localhost:3004/onnx";
+const BASE_URL = "http://localhost:3006/onnx";
 const BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct";
 const QUANTIZATION = "q4f16";
 const MAX_SINGLE_CHAT_LENGTH = 10;
@@ -88,7 +92,7 @@ export async function useLLMVision(
   // }
   logger.groupEnd();
 
-  logger.group("[MODEL] Loading configuration...");
+  logger.groupCollapsed("[MODEL] Loading configuration...");
   const config = (await getModelJSON(BASE_MODEL, "config.json")) as any;
   logger.log(`  num_hidden_layers: ${config.num_hidden_layers}`);
   logger.log(`  num_attention_heads: ${config.num_attention_heads}`);
@@ -101,7 +105,7 @@ export async function useLLMVision(
 
   let position_ids;
   let num_decode = 0;
-  let history_len = new Tensor("int64", new BigInt64Array([0n]), [1]);
+  let history_len = new Tensor("int32", new Int32Array([0]), [1]);
   logger.tensor("history_len", history_len);
 
   var pos_factor_v = BigInt(1 - IMAGE_EMBED_SIZE + WIDTH_FACTOR);
@@ -136,7 +140,7 @@ export async function useLLMVision(
   let pos_factor = new Tensor("float16", new Uint16Array([0]), [1]);
   logger.tensor("pos_factor", pos_factor);
 
-  logger.group("[TOKENIZATION] Processing prompt...");
+  logger.groupCollapsed("[TOKENIZATION] Processing prompt...");
   const tokenizer = await AutoTokenizer.from_pretrained(BASE_MODEL);
   const prompt = `\n<|im_start|>user\n<|vision_start|><|vision_end|>${query}<|im_end|>\n<|im_start|>assistant\n`;
   const token = await tokenizer(prompt, {
@@ -167,13 +171,13 @@ export async function useLLMVision(
   const dummy = new ort.Tensor("int32", new Int32Array([0]), []);
   logger.tensor("dummy", dummy);
 
-  logger.group("[INFERENCE] Running initial inference...");
+  logger.groupCollapsed("[INFERENCE] Running initial inference...");
   logger.log("Computing hidden states...");
   ortSessionB = await ort.InferenceSession.create(
     `${BASE_URL}/QwenVL_B${suffix}.onnx`,
     {
       executionProviders: ["webgpu"],
-      logSeverityLevel: 2,
+      logSeverityLevel: 0,
       logVerbosityLevel: 1,
       enableProfiling: true,
       enableCpuMemArena: true,
@@ -190,7 +194,7 @@ export async function useLLMVision(
 
   logger.tensor("hidden_states (initial)", hidden_states);
 
-  logger.group("[POSITION] Computing position IDs...");
+  logger.groupCollapsed("[POSITION] Computing position IDs...");
   ortSessionC = await ort.InferenceSession.create(
     `${BASE_URL}/QwenVL_C${suffix}.onnx`,
     {
@@ -215,7 +219,6 @@ export async function useLLMVision(
   // Process image
   if (vision) {
     logger.log("\n[IMAGE] Processing image...");
-    const imageStartTime = performance.now();
     let image = await RawImage.fromURL(imagePath);
     logger.log(`Original size: ${image.width}x${image.height}`);
     logger.log(`Original mode: ${image.mode}`);
@@ -253,11 +256,9 @@ export async function useLLMVision(
       }
     );
 
-    logger.log("session a run");
     const { image_embed } = await ortSessionA.run({
       pixel_values: pixel_values,
     });
-    console.log("done session a");
 
     logger.tensor("image_embed", image_embed);
 
@@ -317,21 +318,16 @@ export async function useLLMVision(
     ortSessionD = null;
   }
 
-  logger.group("[GENERATION] Starting text generation...");
+  logger.groupCollapsed("[GENERATION] Starting text generation...");
   const generationStartTime = performance.now();
 
   while (
     num_decode < MAX_SINGLE_CHAT_LENGTH &&
     Number(history_len.data[0]) < MAX_SEQ_LENGTH
   ) {
-    // const int32Data = Array.from(history_len.data).map(Number);
-    // history_len = new ort.Tensor("int32", int32Data, history_len.dims);
-    // const int32IdsData = Array.from(ids_len.data).map(Number);
-    // ids_len = new ort.Tensor("int32", int32IdsData, ids_len.dims);
-
     let token_id;
-    logger.group(`Step ${num_decode}`);
-    logger.group("Session E inputs:");
+    logger.groupCollapsed(`Step ${num_decode}`);
+    logger.groupCollapsed("Session E inputs:");
     logger.tensor("hidden_states", hidden_states);
     logger.tensor("attention_mask", attention_mask);
     logger.tensor("past_key_states", past_key_states);
@@ -345,21 +341,17 @@ export async function useLLMVision(
     if (!ortSessionE) {
       console.log("Create ortSessionE");
       ortSessionE = await ort.InferenceSession.create(
-        `http://localhost:3005/onnx/QwenVL_E_int8.onnx`,
+        `${BASE_URL}/QwenVL_E_int8.onnx`,
         {
-          executionProviders: ["wasm"],
-          logSeverityLevel: 0,
-          logVerbosityLevel: 3,
+          executionProviders: ["webgpu"],
+          logSeverityLevel: 1,
+          logVerbosityLevel: 0,
           enableProfiling: false,
           enableCpuMemArena: false,
           graphOptimizationLevel: "all",
           executionMode: "sequential",
           intraOpNumThreads: 0,
           interOpNumThreads: 0,
-          // webgpuFlags: {
-          //   debugShaders: true,
-          //   profilingMode: true,
-          // },
         }
       );
     }
@@ -393,18 +385,11 @@ export async function useLLMVision(
 
     num_decode++;
     if (num_decode < 2) {
-      logger.group("First decode step adjustments:");
-      console.log("ids_len", ids_len.data[0]);
-      history_len = history_len.add(BigInt(Number(ids_len.data[0])));
-      // console.log({ history_len });
-      // console.log(history_len.data);
-      // console.log({ history_len });
-      // if (1 == 1) {
-      // break;
-      // }
+      logger.groupCollapsed("First decode step adjustments:");
+      history_len = history_len.add(BigInt(ids_len.data[0]));
       logger.tensor("Updated history_len", history_len);
 
-      ids_len = new ort.Tensor("int64", new BigInt64Array([1n]), [1]);
+      ids_len = new ort.Tensor("int64", new BigInt64Array([1]), [1]);
       logger.log(`Updated ids_len: ${ids_len.data[0]}`);
 
       attention_mask = new ort.Tensor("float16", new Uint16Array([0]), [1]);
@@ -413,7 +398,7 @@ export async function useLLMVision(
       if (vision) {
         pos_factor = new Tensor(
           "float16",
-          new Uint16Array([int64ToFloat16(pos_factor_v + ids_len.data[0])]),
+          new Uint16Array([int32ToFloat16(pos_factor_v + ids_len.data[0])]),
           [1]
         );
       } else {
@@ -427,7 +412,7 @@ export async function useLLMVision(
       logger.tensor("Updated pos_factor", pos_factor);
       logger.groupEnd();
     } else {
-      logger.group(`Regular step ${num_decode} adjustments:`);
+      logger.groupCollapsed(`Regular step ${num_decode} adjustments:`);
       history_len = history_len.add(BigInt(1));
       pos_factor = pos_factor.map((v) =>
         int64ToFloat16(float16ToInt64(v) + BigInt(1))
@@ -436,13 +421,10 @@ export async function useLLMVision(
       logger.tensor("Updated pos_factor", pos_factor);
       logger.groupEnd();
     }
-
-    // input_ids[0] = token_id.data[0];
-    console.log({ token_id });
     (input_ids.data as Int32Array)[0] = Number(token_id.data[0]);
     logger.tensor("Updated input_ids", input_ids);
 
-    logger.group("Getting new hidden states...");
+    logger.groupCollapsed("Getting new hidden states...");
     const result_B = await ortSessionB.run({
       input_ids: input_ids,
       ids_len: ids_len,
@@ -466,7 +448,7 @@ export async function useLLMVision(
   }
 
   const generationTime = (performance.now() - generationStartTime) / 1000;
-  logger.group("[PERFORMANCE] Generation complete:");
+  logger.groupCollapsed("[PERFORMANCE] Generation complete:");
   logger.log(`  Total tokens generated: ${num_decode}`);
   logger.log(`  Generation time: ${generationTime.toFixed(2)}s`);
   logger.log(`  Speed: ${(num_decode / generationTime).toFixed(3)} tokens/s`);
