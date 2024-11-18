@@ -342,7 +342,7 @@ export async function useLLMVision(
     num_decode++;
     if (num_decode < 2) {
       logger.groupCollapsed("First decode step adjustments:");
-      history_len = history_len.add(BigInt(Number(ids_len.data[0])));
+      history_len = history_len.add(BigInt(ids_len.data[0]));
       logger.tensor("Updated history_len", history_len);
 
       ids_len = new ort.Tensor("int64", new BigInt64Array([1n]), [1]);
