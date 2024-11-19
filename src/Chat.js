@@ -2,8 +2,11 @@ import { Code, MinimizeIcon, Send } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG } from "./constants/chat.js";
 import { useLLMHtmlGeneration } from "./hooks/useLLMHtmlGeneration.js";
+import { useLLMVisionGeneration } from "./hooks/useLLMVision.js";
 
 const h = React.createElement;
+
+const INTERFACE = 'IMAGE';
 
 export function Chat() {
   const [messages, setMessages] = useState([]);
@@ -12,16 +15,25 @@ export function Chat() {
   const iframeRef = useRef(null);
   const [buildStage, setBuildStage] = useState(0);
 
-  const { generateCode, isGenerating, error, generatedCode } =
-    useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG);
+  let generateText;
+  let isGenerating;
+  let error;
+  let generatedText;
+  if (INTERFACE === 'IMAGE') {
+    ({ generateText, isGenerating, error, generatedText } =
+      useLLMVisionGeneration(LLM_HTML_MODEL_CONFIG));
+  } else {
+    ({ generateCode: generateText, isGenerating, error, generatedCode: generatedText } =
+      useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG));
+  }
   const [currentMessageId, setCurrentMessageId] = useState(null);
 
   useEffect(() => {
-    if (generatedCode) {
+    if (generatedText) {
       iframeRef.current?.contentWindow?.postMessage(
         {
           type: "updateContent",
-          content: generatedCode,
+          content: generatedText,
         },
         "*"
       );
@@ -29,12 +41,12 @@ export function Chat() {
       if (currentMessageId !== null) {
         setMessages((prev) =>
           prev.map((msg, idx) =>
-            idx === currentMessageId ? { ...msg, content: generatedCode } : msg
+            idx === currentMessageId ? { ...msg, content: generatedText } : msg
           )
         );
       }
     }
-  }, [generatedCode, currentMessageId]);
+  }, [generatedText, currentMessageId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,7 +60,7 @@ export function Chat() {
     setInput("");
     setIsCodePanelOpen(true);
 
-    await generateCode(input);
+    await generateText(input);
   };
 
   return h(

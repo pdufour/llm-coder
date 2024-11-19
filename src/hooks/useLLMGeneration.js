@@ -104,6 +104,9 @@ export function useLLMGeneration(
   const backendRef = React.useRef(null)
 
   React.useEffect(() => {
+    if (typeof backend != 'string') {
+      backendRef.current = backend;
+    }
     if (backend === "webllm" && modelConfig.webllm) {
       backendRef.current = new WebLLMBackend(
         modelConfig.webllm.modelId,
@@ -119,7 +122,7 @@ export function useLLMGeneration(
   }, [backend, modelConfig])
 
   const generate = React.useCallback(
-    async prompt => {
+    async (prompt, extras) => {
       if (!backendRef.current) {
         throw new Error(`No backend configured for ${backend}`)
       }
@@ -144,7 +147,7 @@ export function useLLMGeneration(
       }
 
       try {
-        await backendRef.current.generate(prompt, systemPrompt, callbacks)
+        await backendRef.current.generate(prompt, systemPrompt, callbacks, extras)
       } catch (err) {
         callbacks.onError(err)
       }

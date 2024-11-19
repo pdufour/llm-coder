@@ -1,7 +1,6 @@
 import { env } from "@huggingface/transformers";
 import React from "react";
 import { Home } from "./Home.js";
-import { useLLMVision } from "./hooks/useLLMVision.js";
 
 const h = React.createElement;
 
@@ -11,8 +10,6 @@ async function init() {
     await import.meta.resolve("#onnxruntime-webgpu")
   ).toString();
   env.backends.onnx.wasm.wasmPaths = wasmPaths;
-
-  // useLLMVision("http://localhost:3004/car_960.jpg", "Describe this image.");
 }
 
 export const App = () => {
