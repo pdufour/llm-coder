@@ -16,7 +16,6 @@ async function init() {
 }
 
 export const App = () => {
-  console.log('test');
   return h(
     "div",
     { className: "min-h-screen min-w-full" },
