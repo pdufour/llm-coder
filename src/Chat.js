@@ -1,4 +1,4 @@
-import { Code, Github, XCircle, Database, MinimizeIcon, Send, Upload, Trash2 } from "lucide-react";
+import { Code, Github, XCircle, Database, MinimizeIcon, Send, Upload, Trash2, Linkedin } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG, LLM_VISION_MODEL_CONFIG } from "./constants/chat.js";
 import { useLLMHtmlGeneration } from "./hooks/useLLMHtmlGeneration.js";
@@ -134,6 +134,21 @@ export function Chat() {
     h(
       "div",
       { className: "fixed top-4 right-4 z-20 flex items-center gap-2" },
+      h(
+        "a",
+        {
+          href: "https://linkedin.com/in/pauldufour",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          className: "bg-gray-900/80 backdrop-blur-sm rounded-full px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
+        },
+        h(
+          "div",
+          { className: "bg-white rounded-full p-1" },
+          h(Linkedin, { className: "w-4 h-4 text-[#0A66C2]" })
+        ),
+        "Paul Dufour"
+      ),
       h(
         "a",
         {
