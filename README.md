@@ -1,5 +1,5 @@
 # llm-coder
-llm-coder is a great free AI website-builder powered by your browser. No API keys required. No server required. See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/).
+llm-coder is a open source AI website-builder powered by your browser. No API keys required. No server required. See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/).
 
 ![site](https://github.com/pdufour/llm-coder/raw/main/public/site-50.webp)
 
