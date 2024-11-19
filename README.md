@@ -1,9 +1,7 @@
 # llm-coder
-In-browser LLM website generator. llm-coder is a great free AI solution that runs via onnx-runtime. No AI tools needed, just your browser (probably a deskstop), and a bit of time required.
+In-browser LLM website generator. llm-coder is a great free AI solution that runs via onnx-runtime. No AI tools needed, just your browser. See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/).
 
 ![site](https://github.com/pdufour/llm-coder/raw/main/public/site-50.webp)
-
-See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/)
 
 llm-coder is a completely browser-based tool that uses in-browser LLMs powered by webgpu to generate websites.
 
