@@ -1,5 +1,5 @@
 # llm-coder
-In-browser LLM website generator
+In-browser LLM website generator. llm-coder is a great free AI solution that runs via onnx-runtime. No AI tools needed, just your browser (probably a deskstop), and a bit of time required.
 
 ![site](https://github.com/pdufour/llm-coder/raw/main/public/site.webp)
 
@@ -11,7 +11,8 @@ It supports the following features:
 1. Describe a site you want - the tool will generate the HTML and CSS for you
 2. Drag and drop an image - the tool will generate the HTML and CSS for you
 
-
+## Tech Stack
+- [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/)
 
 ## Setup
 
