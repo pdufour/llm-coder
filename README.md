@@ -1,7 +1,7 @@
 # llm-coder
 In-browser LLM website generator
 
-![site](https://github.com/pdufour/llm-coder/raw/main/public/site.webp)
+![site](https://github.com/pdufour/llm-coder/raw/main/public/site.webm)
 
 See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/)
 
