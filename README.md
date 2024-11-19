@@ -15,6 +15,6 @@ It supports the following features:
 ## Setup
 
 1. Clone the repository
-2. Install [static-web-server](https://static-web-server.net/download-and-install/#nixos)
+2. Install [static-web-server](https://static-web-server.net/download-and-install/#macos)
 2. Run `make run`
 3. Visit http://localhost:3000/llm-coder in the browser
