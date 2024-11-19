@@ -11,11 +11,9 @@ const INPUT_IMAGE_SIZE = [960, 960]
 const HEIGHT_FACTOR = 10
 const WIDTH_FACTOR = 10
 const IMAGE_EMBED_SIZE = WIDTH_FACTOR * HEIGHT_FACTOR
-const MAX_SEQ_LENGTH = 1024
 const BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct";
 const ONNX_MODEL = "pdufour/Qwen2-VL-2B-Instruct-ONNX-Q4-F16";
 const QUANTIZATION = "q4f16"
-const MAX_SINGLE_CHAT_LENGTH = 10
 
 export async function useLLMVision(imagePath, query, vision = true) {
   logger.group("[CONFIG] Settings:")

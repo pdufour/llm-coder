@@ -1,6 +1,6 @@
-import { Code, MinimizeIcon, Send } from "lucide-react";
+import { Code, MinimizeIcon, Send, Upload } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
-import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG } from "./constants/chat.js";
+import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG, LLM_VISION_MODEL_CONFIG } from "./constants/chat.js";
 import { useLLMHtmlGeneration } from "./hooks/useLLMHtmlGeneration.js";
 import { useLLMVisionGeneration } from "./hooks/useLLMVision.js";
 
@@ -11,8 +11,11 @@ const INTERFACE = 'IMAGE';
 export function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImageURL, setSelectedImageURL] = useState(null);
   const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
   const iframeRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [buildStage, setBuildStage] = useState(0);
 
   let generateText;
@@ -21,7 +24,7 @@ export function Chat() {
   let generatedText;
   if (INTERFACE === 'IMAGE') {
     ({ generateText, isGenerating, error, generatedText } =
-      useLLMVisionGeneration(LLM_HTML_MODEL_CONFIG));
+      useLLMVisionGeneration(LLM_VISION_MODEL_CONFIG));
   } else {
     ({ generateCode: generateText, isGenerating, error, generatedCode: generatedText } =
       useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG));
@@ -48,19 +51,36 @@ export function Chat() {
     }
   }, [generatedText, currentMessageId]);
 
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = (e2) => {
+        setSelectedImage(reader.result);
+        setSelectedImageURL(e2.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isGenerating) return;
+    if ((!input.trim() && !selectedImage) || isGenerating) return;
 
-    const userMessage = { role: "user", content: input };
+    const userMessage = {
+      role: "user",
+      content: input,
+      image: selectedImage
+    };
     const assistantMessage = { role: "assistant", content: "" };
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setCurrentMessageId(messages.length + 1);
     setInput("");
+    setSelectedImage(null);
     setIsCodePanelOpen(true);
 
-    await generateText(input);
+    await generateText(input, { imageURL: selectedImage });
   };
 
   return h(
@@ -99,6 +119,27 @@ export function Chat() {
           })
         )
       ),
+    selectedImage && h(
+      "div",
+      { className: "fixed bottom-32 left-1/2 -translate-x-1/2 z-10 bg-gray-900/80 backdrop-blur-sm rounded-lg p-2" },
+      h(
+        "div",
+        { className: "relative" },
+        h("img", {
+          src: selectedImage,
+          alt: "Selected",
+          className: "max-h-32 rounded"
+        }),
+        h(
+          "button",
+          {
+            onClick: () => setSelectedImage(null),
+            className: "absolute -top-2 -right-2 bg-red-500 rounded-full p-1 text-white",
+          },
+          "×"
+        )
+      )
+    ),
     isGenerating &&
     h(
       "div",
@@ -198,9 +239,26 @@ export function Chat() {
               "flex-1 bg-transparent px-4 py-3 focus:outline-none placeholder-gray-500",
             disabled: isGenerating,
           }),
+          h("input", {
+            ref: fileInputRef,
+            type: "file",
+            accept: "image/*",
+            onChange: handleImageUpload,
+            className: "hidden",
+          }),
           h(
             "div",
             { className: "flex items-center gap-2 pr-3" },
+            h(
+              "button",
+              {
+                type: "button",
+                onClick: () => fileInputRef.current?.click(),
+                className:
+                  "p-2 text-gray-400 hover:text-gray-200 transition-colors",
+              },
+              h(Upload, { className: "w-5 h-5" })
+            ),
             !isCodePanelOpen &&
             messages.length > 0 &&
             h(

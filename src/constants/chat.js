@@ -1,5 +1,18 @@
 import { CSPBuilder } from "../utils/csp.js";
 
+export const LLM_VISION_MODEL_CONFIG = {
+  modelConfig: {
+    qwen2vl: {
+      modelId: "pdufour/Qwen2-VL-2B-Instruct-ONNX-Q4-F16",
+      generation: {
+        baseModelId: "Qwen/Qwen2-VL-2B-Instruct",
+        max_single_chat_length: 10,
+        max_seq_length: 1024,
+      },
+    }
+  },
+};
+
 export const LLM_HTML_MODEL_CONFIG = {
   modelConfig: {
     webllm: {
