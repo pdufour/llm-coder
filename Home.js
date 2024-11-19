@@ -1,6 +1,6 @@
 import React from "react";
 import { Chat } from "./Chat.js";
-import { Header } from "/Header.js";
+import { Header } from "./Header.js";
 
 const h = React.createElement;
 
