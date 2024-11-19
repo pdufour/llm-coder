@@ -6,7 +6,7 @@ export const LLM_VISION_MODEL_CONFIG = {
       modelId: "pdufour/Qwen2-VL-2B-Instruct-ONNX-Q4-F16",
       generation: {
         baseModelId: "Qwen/Qwen2-VL-2B-Instruct",
-        max_single_chat_length: 10,
+        max_single_chat_length: 256,
         max_seq_length: 1024,
       },
     }

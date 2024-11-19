@@ -6,7 +6,7 @@ import { useLLMVisionGeneration } from "./hooks/useLLMVision.js";
 
 const h = React.createElement;
 
-const INTERFACE = 'IMAGE';
+const INTERFACE = 'TEXT';
 
 export function Chat() {
   const [messages, setMessages] = useState([]);
