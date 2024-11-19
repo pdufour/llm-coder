@@ -1,4 +1,4 @@
-import { Code, Github, MinimizeIcon, Send, Upload } from "lucide-react";
+import { Code, Github, XCircle, Database, MinimizeIcon, Send, Upload, Trash2 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { IFRAME_TEMPLATE, LLM_HTML_MODEL_CONFIG, LLM_VISION_MODEL_CONFIG } from "./constants/chat.js";
 import { useLLMHtmlGeneration } from "./hooks/useLLMHtmlGeneration.js";
@@ -14,9 +14,12 @@ export function Chat() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageURL, setSelectedImageURL] = useState(null);
   const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
+  const [showWarning, setShowWarning] = useState(true);
   const iframeRef = useRef(null);
   const fileInputRef = useRef(null);
   const [buildStage, setBuildStage] = useState(0);
+  const [hasCache, setHasCache] = useState(false);
+  const [cacheSize, setCacheSize] = useState(0);
 
   let generateText;
   let isGenerating;
@@ -30,6 +33,36 @@ export function Chat() {
       useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG));
   }
   const [currentMessageId, setCurrentMessageId] = useState(null);
+
+  const checkCache = async () => {
+    try {
+      const keys = await caches.keys();
+      if (keys.length > 0) {
+        setHasCache(true);
+        const estimate = await navigator.storage.estimate();
+        const usedBytes = estimate.usage || 0;
+        setCacheSize(Math.round(usedBytes / (1024 * 1024)));
+      }
+    } catch (error) {
+      console.error("Failed to check cache:", error);
+    }
+  };
+
+  const clearModelCache = async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+      setHasCache(false);
+      setCacheSize(0);
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to clear cache:", error);
+    }
+  };
+
+  useEffect(() => {
+    checkCache();
+  }, []);
 
   useEffect(() => {
     if (generatedText) {
@@ -67,6 +100,12 @@ export function Chat() {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || isGenerating) return;
 
+    if (showWarning) {
+      const proceed = window.confirm("Warning: Using this chat will download AI models larger than 1GB in size. Do you want to continue?");
+      if (!proceed) return;
+      setShowWarning(false);
+    }
+
     const userMessage = {
       role: "user",
       content: input,
@@ -87,15 +126,30 @@ export function Chat() {
     "div",
     { className: "min-h-screen bg-gray-950 text-gray-200" },
     h(
-      "a",
-      {
-        href: "https://github.com/pdufour/llm-coder",
-        target: "_blank",
-        rel: "noopener noreferrer",
-        className: "fixed top-4 right-4 z-20 bg-gray-900/80 backdrop-blur-sm rounded-full px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
-      },
-      h(Github, { className: "w-5 h-5" }),
-      "GitHub Repo"
+      "div",
+      { className: "fixed top-4 right-4 z-20 flex items-center gap-2" },
+      hasCache && h(
+        "button",
+        {
+          onClick: clearModelCache,
+
+          className: "bg-gray-900/80 backdrop-blur-sm rounded-full p-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
+          title: `Clear cached models (${cacheSize}MB)`
+        },
+        h(XCircle, { className: "w-5 h-5" }),
+        `Delete Cache ${cacheSize}MB`
+      ),
+      h(
+        "a",
+        {
+          href: "https://github.com/pdufour/llm-coder",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          className: "bg-gray-900/80 backdrop-blur-sm rounded-full px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
+        },
+        h(Github, { className: "w-5 h-5" }),
+        "GitHub"
+      )
     ),
     !isGenerating && !messages.length
       ? h(
