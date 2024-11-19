@@ -355,7 +355,7 @@ class Qwen2VLBackend {
         const decoded = tokenizer.decode([...token_id.data]);
         logger.log(`Decoded token: ${decoded}`);
         accumulated += decoded;
-        callbacks.onToken(accumulated);
+        callbacks.onToken(decoded);
         await scheduler?.scheduler?.yield();
       }
 

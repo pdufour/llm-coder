@@ -19,7 +19,6 @@ export function useLLMVisionGeneration({
 
   React.useEffect(() => {
     if (partialText) {
-      console.log({ partialText });
       setGeneratedText(partialText);
       lastGeneratedText.current = partialText;
     }
