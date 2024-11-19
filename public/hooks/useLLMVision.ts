@@ -26,7 +26,7 @@ const HEIGHT_FACTOR = 10;
 const WIDTH_FACTOR = 10;
 const IMAGE_EMBED_SIZE = WIDTH_FACTOR * HEIGHT_FACTOR;
 const MAX_SEQ_LENGTH = 1024;
-const BASE_URL = "http://localhost:3003/onnx";
+const BASE_URL = "http://localhost:3004/onnx";
 const BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct";
 const QUANTIZATION = "q4f16";
 const MAX_SINGLE_CHAT_LENGTH = 10;
@@ -133,20 +133,22 @@ export async function useLLMVision(
 
   logger.groupCollapsed("[INFERENCE] Running initial inference...");
   logger.log("Computing hidden states...");
-  ortSessionB = await ort.InferenceSession.create(
-    `http://localhost:3003/onnx/QwenVL_B${suffix}.onnx`,
-    {
-      executionProviders: ["webgpu"],
-      logSeverityLevel: 2,
-      logVerbosityLevel: 1,
-      enableProfiling: true,
-      enableCpuMemArena: true,
-      graphOptimizationLevel: "all",
-      executionMode: "sequential",
-      intraOpNumThreads: 0,
-      interOpNumThreads: 0,
-    }
-  );
+  if (!ortSessionB) {
+    ortSessionB = await ort.InferenceSession.create(
+      `http://localhost:3004/onnx-dist/QwenVL_B${suffix}.onnx`,
+      {
+        executionProviders: ["webgpu"],
+        logSeverityLevel: 0,
+        logVerbosityLevel: 1,
+        enableProfiling: true,
+        enableCpuMemArena: true,
+        graphOptimizationLevel: "all",
+        executionMode: "sequential",
+        intraOpNumThreads: 0,
+        interOpNumThreads: 0,
+      }
+    );
+  }
   let { hidden_states } = await ortSessionB.run({
     input_ids: input_ids,
     ids_len: ids_len,
@@ -155,20 +157,22 @@ export async function useLLMVision(
   logger.tensor("hidden_states (initial)", hidden_states);
 
   logger.groupCollapsed("[POSITION] Computing position IDs...");
-  ortSessionC = await ort.InferenceSession.create(
-    `http://localhost:3003/onnx/QwenVL_C${suffix}.onnx`,
-    {
-      executionProviders: ["webgpu"],
-      logSeverityLevel: 2,
-      logVerbosityLevel: 1,
-      enableProfiling: true,
-      enableCpuMemArena: true,
-      graphOptimizationLevel: "all",
-      executionMode: "sequential",
-      intraOpNumThreads: 0,
-      interOpNumThreads: 0,
-    }
-  );
+  if (!ortSessionC) {
+    ortSessionC = await ort.InferenceSession.create(
+      `http://localhost:3004/onnx-dist/QwenVL_C${suffix}.onnx`,
+      {
+        executionProviders: ["webgpu"],
+        logSeverityLevel: 2,
+        logVerbosityLevel: 1,
+        enableProfiling: true,
+        enableCpuMemArena: true,
+        graphOptimizationLevel: "all",
+        executionMode: "sequential",
+        intraOpNumThreads: 0,
+        interOpNumThreads: 0,
+      }
+    );
+  }
   ({ position_ids } = await ortSessionC.run({
     dummy: dummy,
   }));
@@ -195,20 +199,23 @@ export async function useLLMVision(
     logger.tensor("pixel_values", pixel_values);
 
     // Run session A for image embeddings
-    ortSessionA = await ort.InferenceSession.create(
-      `http://localhost:3003/onnx/QwenVL_A${suffix}.onnx`,
-      {
-        executionProviders: ["webgpu"],
-        logSeverityLevel: 2,
-        logVerbosityLevel: 0,
-        enableProfiling: false,
-        enableCpuMemArena: false,
-        graphOptimizationLevel: "disabled",
-        executionMode: "sequential",
-        intraOpNumThreads: 0,
-        interOpNumThreads: 0,
-      }
-    );
+    if (!ortSessionA) {
+      console.log("create session a");
+      ortSessionA = await ort.InferenceSession.create(
+        `http://localhost:3004/onnx-dist/QwenVL_A${suffix}.onnx`,
+        {
+          executionProviders: ["webgpu"],
+          logSeverityLevel: 0,
+          logVerbosityLevel: 0,
+          enableProfiling: false,
+          enableCpuMemArena: false,
+          graphOptimizationLevel: "all",
+          executionMode: "sequential",
+          intraOpNumThreads: 0,
+          interOpNumThreads: 0,
+        }
+      );
+    }
 
     logger.log("session a run");
     const { image_embed } = await ortSessionA.run({
@@ -239,7 +246,7 @@ export async function useLLMVision(
 
     logger.log("session d create");
     ortSessionD = await ort.InferenceSession.create(
-      `http://localhost:3003/onnx/QwenVL_D${suffix}.onnx`,
+      `http://localhost:3004/onnx-dist/QwenVL_D${suffix}.onnx`,
       {
         executionProviders: ["webgpu"],
         logSeverityLevel: 2,
@@ -297,10 +304,10 @@ export async function useLLMVision(
     if (!ortSessionE) {
       console.log("Create ortSessionE");
       ortSessionE = await ort.InferenceSession.create(
-        `http://localhost:3004/onnx/QwenVL_E_int8.onnx`,
+        `http://localhost:3004/onnx-dist/QwenVL_E_q4f16.onnx`,
         {
-          executionProviders: ["webgpu"],
-          logSeverityLevel: 1,
+          executionProviders: ["wasm"],
+          logSeverityLevel: 2,
           logVerbosityLevel: 0,
           enableProfiling: false,
           enableCpuMemArena: false,
@@ -310,10 +317,11 @@ export async function useLLMVision(
           interOpNumThreads: 0,
         }
       );
+      console.log("outputNames", ortSessionE.outputNames);
     }
 
-    ort.env.debug = true;
-    ort.env.logLevel = "verbose";
+    // ort.env.debug = true;
+    // ort.env.logLevel = "verbose";
 
     ({
       max_logit_ids: token_id,
