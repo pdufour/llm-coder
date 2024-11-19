@@ -1,6 +1,8 @@
 # llm-coder
 In-browser LLM website generator
 
+![alt text](site.png "Title")
+
 See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/)
 
 llm-coder is a completely browser-based tool that uses in-browser LLMS powered by webgpu to generate websites.
@@ -8,6 +10,7 @@ llm-coder is a completely browser-based tool that uses in-browser LLMS powered b
 It supports the following features:
 1. Describe a site you want - the tool will generate the HTML and CSS for you
 2. Drag and drop an image - the tool will generate the HTML and CSS for you
+
 
 
 ## Setup
