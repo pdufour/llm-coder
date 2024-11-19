@@ -1,5 +1,4 @@
-import { LLMBackend } from "../hooks/useLLMGeneration.ts";
-import { CSPBuilder } from "../utils/csp.ts";
+import { CSPBuilder } from "../utils/csp.js";
 
 export const LLM_HTML_MODEL_CONFIG = {
   modelConfig: {
@@ -25,13 +24,13 @@ export const LLM_HTML_MODEL_CONFIG = {
       },
     },
   },
-  backend: "webllm" as LLMBackend,
+  backend: "webllm",
 };
 
 const { cspString: IFRAME_CSP, nonce: IFRAME_CSP_NONCE } =
   await new CSPBuilder()
     .addDirective("default-src", "'none'")
-    .addDirective("img-src", "*")
+    .addDirective("img-src", "'none'")
     .addDirective("style-src", "'unsafe-inline'")
     .addDirective("script-src", "https://cdn.tailwindcss.com")
     .addScriptNonce()

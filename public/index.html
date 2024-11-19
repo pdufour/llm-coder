@@ -15,15 +15,14 @@
           "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?dev",
           "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?dev",
           "lucide-react": "https://esm.run/lucide-react",
-          "@huggingface/transformers": "http://localhost:3001/src/transformers.js",
-          "@huggingface/transformers/utils/hub.js": "http://localhost:3001/src/utils/hub.js",
-          "@huggingface/transformers/utils/tensor.js": "http://localhost:3001/src/utils/tensor.js",
-          "@huggingface/transformers/src/generation/configuration_utils.js": "http://localhost:3001/src/generation/configuration_utils.js",
-          "sharp": "http://localhost:3000/noop.js",
-          "fs": "http://localhost:3000/noop.js",
-          "path": "http://localhost:3000/noop.js",
-          "url": "http://localhost:3000/noop.js",
-          "onnxruntime-node": "http://localhost:3000/noop.js",
+          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers",
+          "@huggingface/transformers/utils/hub.js": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/src/utils/hub.js",
+          "@huggingface/transformers/src/generation/configuration_utils.js": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/src/src/generation/configuration_utils.js",
+          "sharp": "/noop.js",
+          "fs": "/noop.js",
+          "path": "/noop.js",
+          "url": "/noop.js",
+          "onnxruntime-node": "/noop.js",
           "@huggingface/jinja": "https://esm.run/@huggingface/jinja",
           "onnxruntime-common": "https://esm.run/onnxruntime-common",
           "#onnxruntime-webgpu": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/ort.webgpu.mjs",
@@ -35,7 +34,7 @@
         }
       }
     </script>
-    <script type="module">
+    <!--<script type="module">
       import { Workbox } from "https://cdn.jsdelivr.net/npm/workbox-window/+esm";
 
       const wb = new Workbox("/sw.js", { type: "module" });
@@ -65,6 +64,9 @@
       await wb.register();
       await activationPromise;
       await import("./root.tsx");
+    </script>-->
+    <script type="module">
+      await import("./root.js");
     </script>
   </body>
 </html>

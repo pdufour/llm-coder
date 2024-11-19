@@ -1,24 +1,7 @@
 import React from "react";
 import {
-  LLMBackend,
-  type ModelConfig,
   useLLMGeneration,
-} from "./useLLMGeneration.ts";
-
-// Generic LLM Backend Types & Implementations
-
-type UseLLMHtmlReturn = {
-  generateCode: (prompt: string) => Promise<void>;
-  isGenerating: boolean;
-  error: Error | null;
-  generatedCode: string;
-};
-
-export interface LLMHtmlGenerationConfig {
-  modelConfig: ModelConfig;
-  backend?: LLMBackend;
-  systemPrompt?: string;
-}
+} from "./useLLMGeneration.js";
 
 export const SYSTEM_PROMPT = `You are a specialized HTML generator that creates complete, production-ready HTML using ONLY Tailwind CSS classes.
 
@@ -56,7 +39,7 @@ Instead of:
 
 Generate complete, functional HTML using ONLY Tailwind classes for styling.`;
 
-function cleanHtmlCode(fullHtml: string): string {
+function cleanHtmlCode(fullHtml) {
   // First remove markdown code blocks
   let cleaned = fullHtml
     .replace(/```html/gi, "")
@@ -97,7 +80,7 @@ export function useLLMHtmlGeneration({
   modelConfig,
   backend,
   systemPrompt = SYSTEM_PROMPT,
-}: LLMHtmlGenerationConfig): UseLLMHtmlReturn {
+}) {
   const [generatedCode, setGeneratedCode] = React.useState("");
   const lastGeneratedCode = React.useRef("");
 
@@ -117,7 +100,7 @@ export function useLLMHtmlGeneration({
   }, [partialText]);
 
   const generateCode = React.useCallback(
-    async (prompt: string): Promise<void> => {
+    async (prompt) => {
       const fullPrompt = lastGeneratedCode.current
         ? `Current HTML: \n${lastGeneratedCode.current}\n\nRequest: ${prompt}`
         : `Generate the HTML for: ${prompt}`;
