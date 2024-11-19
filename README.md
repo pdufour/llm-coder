@@ -1,9 +1,9 @@
 # llm-coder
-llm-coder is a open source AI website-builder powered by your browser. No API keys required. No server required. See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/).
+llm-coder is a open source privacy-first AI website-builder powered by your browser. No API keys required. No server required. See the live demo at [https://pdufour.github.io/llm-coder/](https://pdufour.github.io/llm-coder/).
 
 ![site](https://github.com/pdufour/llm-coder/raw/main/public/site-50.webp)
 
-llm-coder is a completely browser-based tool that uses in-browser LLMs powered by webgpu to generate websites. That means the inference happens directly on your machine and your messages never go to a server.
+**Privacy:** All AI models run locally in your browser. Your data never leaves your device - no servers involved.
 
 It supports the following features:
 1. Describe a site you want - the tool will generate the HTML and CSS for you
