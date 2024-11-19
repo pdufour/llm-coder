@@ -374,19 +374,28 @@ class Qwen2VLBackend {
 
 class WebLLMBackend {
   constructor(modelId, config) {
-    this.modelId = modelId
-    this.config = config
+    this.modelId = modelId;
+    this.config = config;
+  }
+
+  async warmup() {
+    if (!this.warmupPromise) {
+      this.warmupPromise = (async () => {
+        console.log('Creating new engine');
+        this.engine = await CreateMLCEngine(this.modelId);
+        return this.engine;
+      })();
+    }
+    return this.warmupPromise;
   }
 
   async generate(prompt, systemPrompt, callbacks) {
-    const engine = await CreateMLCEngine(this.modelId)
-
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt }
     ]
 
-    const asyncChunkGenerator = await engine.chat.completions.create({
+    const asyncChunkGenerator = await this.engine.chat.completions.create({
       messages,
       stream: true,
       ...this.config
@@ -491,8 +500,17 @@ export function useLLMGeneration(
     }
   }, [backend, modelConfig])
 
+  const warmup = React.useCallback(async () => {
+    const callbacks = {
+      onToken: () => { },
+      onComplete: () => { },
+      onError: () => { }
+    };
+    await backendRef.current.warmup();
+  });
+
   const generate = React.useCallback(
-    async (prompt, extras) => {
+    async (prompt, extras = {}, config = {}) => {
       if (!backendRef.current) {
         throw new Error(`No backend configured for ${backend}`)
       }
@@ -516,7 +534,10 @@ export function useLLMGeneration(
         }
       }
 
+      backendRef.config = { ...backendRef.config, ...config };
+
       try {
+        await backendRef.current.warmup();
         await backendRef.current.generate(prompt, systemPrompt, callbacks, extras)
       } catch (err) {
         callbacks.onError(err)
@@ -528,6 +549,7 @@ export function useLLMGeneration(
 
   return {
     generate,
+    warmup,
     isGenerating,
     error,
     partialText,

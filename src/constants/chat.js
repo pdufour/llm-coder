@@ -22,6 +22,9 @@ export const LLM_HTML_MODEL_CONFIG = {
         temperature: 0.3,
         top_p: 0.9,
       },
+      warmup: {
+        max_tokens: 1,
+      }
     },
     huggingface: {
       modelId: "Qwen/Qwen2.5-Coder-1.5B-Instruct",
@@ -35,6 +38,9 @@ export const LLM_HTML_MODEL_CONFIG = {
         top_p: 0.9,
         do_sample: true,
       },
+      warmup: {
+        max_new_tokens: 1,
+      }
     },
   },
   backend: "webllm",

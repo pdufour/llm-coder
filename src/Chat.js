@@ -25,11 +25,13 @@ export function Chat() {
   let isGenerating;
   let error;
   let generatedText;
+  let warmup;
+
   if (INTERFACE === 'IMAGE') {
-    ({ generateText, isGenerating, error, generatedText } =
+    ({ generateText, isGenerating, error, generatedText, warmup } =
       useLLMVisionGeneration(LLM_VISION_MODEL_CONFIG));
   } else {
-    ({ generateCode: generateText, isGenerating, error, generatedCode: generatedText } =
+    ({ generateCode: generateText, isGenerating, error, generatedCode: generatedText, warmup } =
       useLLMHtmlGeneration(LLM_HTML_MODEL_CONFIG));
   }
   const [currentMessageId, setCurrentMessageId] = useState(null);
@@ -84,6 +86,16 @@ export function Chat() {
     }
   }, [generatedText, currentMessageId]);
 
+  const onChangeInput = (e) => {
+    setInput(e.target.value);
+    if (showWarning) {
+      const proceed = window.confirm("Warning: Using this chat will download AI models larger than 1GB in size. Do you want to continue?");
+      if (!proceed) return;
+      warmup();
+      setShowWarning(false);
+    }
+  }
+
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -99,12 +111,6 @@ export function Chat() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || isGenerating) return;
-
-    if (showWarning) {
-      const proceed = window.confirm("Warning: Using this chat will download AI models larger than 1GB in size. Do you want to continue?");
-      if (!proceed) return;
-      setShowWarning(false);
-    }
 
     const userMessage = {
       role: "user",
@@ -128,17 +134,6 @@ export function Chat() {
     h(
       "div",
       { className: "fixed top-4 right-4 z-20 flex items-center gap-2" },
-      hasCache && h(
-        "button",
-        {
-          onClick: clearModelCache,
-
-          className: "bg-gray-900/80 backdrop-blur-sm rounded-full p-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
-          title: `Clear cached models (${cacheSize}MB)`
-        },
-        h(XCircle, { className: "w-5 h-5" }),
-        `Delete Cache ${cacheSize}MB`
-      ),
       h(
         "a",
         {
@@ -149,7 +144,17 @@ export function Chat() {
         },
         h(Github, { className: "w-5 h-5" }),
         "GitHub"
-      )
+      ), hasCache && h(
+        "button",
+        {
+          onClick: clearModelCache,
+
+          className: "bg-gray-900/80 backdrop-blur-sm rounded-full p-2 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2",
+          title: `Clear cached models (${cacheSize}MB)`
+        },
+        h(XCircle, { className: "w-5 h-5" }),
+        `Delete Cache ${cacheSize}MB`
+      ),
     ),
     !isGenerating && !messages.length
       ? h(
@@ -298,7 +303,7 @@ export function Chat() {
           h("input", {
             type: "text",
             value: input,
-            onChange: (e) => setInput(e.target.value),
+            onChange: (e) => onChangeInput(e),
             placeholder: "Describe what you want to create...",
             className:
               "flex-1 bg-transparent px-4 py-3 focus:outline-none placeholder-gray-500",

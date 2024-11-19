@@ -84,7 +84,7 @@ export function useLLMHtmlGeneration({
   const [generatedCode, setGeneratedCode] = React.useState("");
   const lastGeneratedCode = React.useRef("");
 
-  const { generate, isGenerating, error, partialText } = useLLMGeneration(
+  const { generate, warmup, isGenerating, error, partialText } = useLLMGeneration(
     modelConfig,
     systemPrompt,
     backend
@@ -100,12 +100,12 @@ export function useLLMHtmlGeneration({
   }, [partialText]);
 
   const generateCode = React.useCallback(
-    async (prompt) => {
+    async (prompt, extras, config) => {
       const fullPrompt = lastGeneratedCode.current
         ? `Current HTML: \n${lastGeneratedCode.current}\n\nRequest: ${prompt}`
         : `Generate the HTML for: ${prompt}`;
 
-      await generate(fullPrompt);
+      await generate(fullPrompt, extras, config);
     },
     [generate]
   );
@@ -115,5 +115,6 @@ export function useLLMHtmlGeneration({
     isGenerating,
     error,
     generatedCode,
+    warmup,
   };
 }
