@@ -12,6 +12,10 @@ It supports the following features:
 ## Tech Stack
 - [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/)
 
+## Design Principles
+- No backends
+- No JS build steps unless the compilation happens directly in the browser.
+
 ## Setup
 
 1. Clone the repository
