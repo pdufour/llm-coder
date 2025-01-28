@@ -12,6 +12,11 @@ It supports the following features:
 ## Tech Stack
 - [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/)
 
+## Support
+- Text generation (via Qwen2)
+- Vision parsing (via Qwen2-VL)
+- Audio transcription (Via Moonshine-Base)
+
 ## Design Principles
 - No backends
 - No JS build steps unless the compilation happens directly in the browser.
